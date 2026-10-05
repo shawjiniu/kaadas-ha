@@ -59,6 +59,9 @@
       "auth": "登录失败，请检查 openId / 手机号。",
       "cannot_connect": "接口请求失败，请检查凭证与网络。",
       "invalid_device": "请选择列表中的门锁。"
+    },
+    "abort": {
+      "updated": "配置已更新"
     }
   },
   "entity": {

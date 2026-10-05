@@ -10,13 +10,9 @@ CONF_PHONE = "phone"
 CONF_OPENID_TOKEN = "open_id_token"
 CONF_WIFI_SN = "wifi_sn"
 CONF_ESN = "esn"
-CONF_PID = "pid"
 CONF_DEVICE_MODEL = "device_model"
 CONF_NICKNAME = "nickname"
 CONF_IS_THING_MODEL = "is_thing_model"
-CONF_UPDATE_INTERVAL = "update_interval"
-
-DEFAULT_UPDATE_INTERVAL_MINUTES = 5
 
 # 服务端
 BASE_URL = "https://miniapp-cn.kaadas.com"
@@ -29,7 +25,6 @@ USER_AGENT = (
 # 物模型服务
 SERVICE_BASIC = "basic_service"
 SERVICE_LOCK = "lock_service"
-SERVICE_BATTERY = "battery_service"
 
 # 物模型属性标识
 PROP_BATTERY_LEVEL = "p_battery_level"

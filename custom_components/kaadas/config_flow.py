@@ -18,7 +18,6 @@ from .const import (
     CONF_OPENID,
     CONF_OPENID_TOKEN,
     CONF_PHONE,
-    CONF_PID,
     CONF_TOKEN,
     CONF_UID,
     CONF_WIFI_SN,
@@ -113,7 +112,6 @@ def _device_entry_data(
         CONF_OPENID_TOKEN: open_id_token,
         CONF_WIFI_SN: str(device.get("wifiSN") or device.get("esn") or ""),
         CONF_ESN: str(device.get("esn") or device.get("wifiSN") or ""),
-        CONF_PID: str(device.get("pid") or ""),
         CONF_DEVICE_MODEL: str(device.get("abbreviation") or device.get("model") or ""),
         CONF_NICKNAME: str(
             device.get("lockNickname") or device.get("nickname") or device.get("deviceName") or ""
@@ -306,9 +304,6 @@ class KaadasOptionsFlow(config_entries.OptionsFlow):
         if not self._devices:
             return await self.async_step_init()
 
-        current_value = str(
-            self._entry.data.get(CONF_WIFI_SN) or self._entry.data.get(CONF_ESN) or ""
-        )
         if user_input is not None:
             device = _select_device(
                 self._devices, str(user_input.get(CONF_DEVICE_CHOICE) or "")
@@ -324,7 +319,11 @@ class KaadasOptionsFlow(config_entries.OptionsFlow):
                     self._pending.get(CONF_PHONE, ""),
                     self._pending.get(CONF_OPENID_TOKEN, ""),
                 )
-                return self.async_create_entry(title="", data=data)
+                # 凭证/设备标识必须写进 entry.data（集成只读 entry.data），
+                # OptionsFlow 的 async_create_entry 会写进 entry.options，故改用 update_entry。
+                self.hass.config_entries.async_update_entry(self._entry, data=data)
+                await self.hass.config_entries.async_reload(self._entry.entry_id)
+                return self.async_abort(reason="updated")
 
         return self.async_show_form(
             step_id="select_device",
