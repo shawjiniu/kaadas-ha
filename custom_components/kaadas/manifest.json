@@ -3,7 +3,7 @@
   "name": "凯迪仕智能门锁",
   "codeowners": [],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["frontend", "http"],
   "documentation": "https://github.com/custom-components/kaadas",
   "integration_type": "device",
   "iot_class": "cloud_push",

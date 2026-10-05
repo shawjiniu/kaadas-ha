@@ -18,6 +18,38 @@
 2. 重启 Home Assistant。
 3. 在「设置 → 设备与服务 → 添加集成」中搜索「凯迪仕智能门锁」。
 
+## 仪表盘卡片
+
+集成自带一个 Lovelace 卡片 `kaadas-lock-card`，安装后**自动注册**（无需手动添加资源）。布局：
+
+```
+ [logo]   设备名称              [状态图标]
+          设备型号               锁状态
+             数据更新时间
+ ┌────────────┐  ┌────────────┐
+ │  电量显示   │  │ WiFi 信号  │
+ └────────────┘  └────────────┘
+ 消息记录列表（时间  消息）
+```
+
+在仪表盘添加卡片时搜索「凯迪仕门锁卡片」，或直接写 YAML：
+
+```yaml
+type: custom:kaadas-lock-card
+entity: lock.kaidas_xxx      # 必填：门锁实体
+# 以下均可选（默认按设备自动发现）
+name: 大门门锁
+model: Q7 FVP
+battery_entity: sensor.kaidas_xxx_battery
+wifi_entity: sensor.kaidas_xxx_wifi_rssi
+status_entity: sensor.kaidas_xxx_lock_status
+records_entity: sensor.kaidas_xxx_last_operation_time
+show_records: true
+records_limit: 10
+```
+
+> 若未自动加载，可在「设置 → 仪表盘 → 资源」手动添加 URL `/kaadas/frontend/kaadas-lock-card.js`（JavaScript 模块）。
+
 ## 抓取凭证
 
 集成只需填写 3 个值（不再需要手动抓取 token），凭证在微信本地存储中，可通过微信开发者工具 / 抓包获取：
