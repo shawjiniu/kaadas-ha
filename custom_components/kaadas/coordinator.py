@@ -16,12 +16,26 @@ from .const import (
     CONF_NICKNAME,
     CONF_WIFI_SN,
     DOMAIN,
+    PROP_ALARM_TYPE,
+    PROP_AUTO_CLOSE_LOCK_TIME,
     PROP_BATTERY_LEVEL,
+    PROP_CLOSE_LOCK_MODE,
     PROP_DEFENSE_MODE,
+    PROP_DOOR_DIRECTION,
+    PROP_DOOR_LOCK_ACTION_TYPE,
+    PROP_DOUBLE_VERIFY_MODE,
     PROP_FIRMWARE_VERSION,
+    PROP_LANGUAGE,
+    PROP_LINGER_DETECTION,
+    PROP_LOCK_BODY_TYPE,
+    PROP_LOCK_FORCE,
     PROP_LOCK_STATUS,
+    PROP_LOCK_VOLUME,
     PROP_LOCKED_INSIDE_STATUS,
     PROP_MODEL_VERSION,
+    PROP_SCREEN_ACTIVE_TIME,
+    PROP_SCREEN_BACKLIGHT,
+    PROP_SCREEN_ONOFF,
     PROP_WIFI_RSSI,
     SERVICE_BASIC,
     SERVICE_LOCK,
@@ -37,8 +51,22 @@ _THING_PROPERTIES: list[tuple[str, str]] = [
     (SERVICE_BASIC, PROP_FIRMWARE_VERSION),
     (SERVICE_BASIC, PROP_MODEL_VERSION),
     (SERVICE_LOCK, PROP_LOCK_STATUS),
-    (SERVICE_LOCK, PROP_DEFENSE_MODE),
+    (SERVICE_LOCK, PROP_DOOR_LOCK_ACTION_TYPE),
+    (SERVICE_LOCK, PROP_ALARM_TYPE),
     (SERVICE_LOCK, PROP_LOCKED_INSIDE_STATUS),
+    (SERVICE_LOCK, PROP_DEFENSE_MODE),
+    (SERVICE_LOCK, PROP_DOUBLE_VERIFY_MODE),
+    (SERVICE_LOCK, PROP_DOOR_DIRECTION),
+    (SERVICE_LOCK, PROP_LOCK_FORCE),
+    (SERVICE_LOCK, PROP_AUTO_CLOSE_LOCK_TIME),
+    (SERVICE_LOCK, PROP_CLOSE_LOCK_MODE),
+    (SERVICE_LOCK, PROP_LINGER_DETECTION),
+    (SERVICE_LOCK, PROP_LOCK_VOLUME),
+    (SERVICE_LOCK, PROP_LANGUAGE),
+    (SERVICE_LOCK, PROP_LOCK_BODY_TYPE),
+    (SERVICE_LOCK, PROP_SCREEN_ONOFF),
+    (SERVICE_LOCK, PROP_SCREEN_BACKLIGHT),
+    (SERVICE_LOCK, PROP_SCREEN_ACTIVE_TIME),
 ]
 
 
@@ -57,6 +85,11 @@ def _find_key(obj: Any, key: str) -> Any:
             if found is not None:
                 return found
     return None
+
+
+def _nested(device: dict[str, Any], key: str) -> dict[str, Any]:
+    value = device.get(key)
+    return value if isinstance(value, dict) else {}
 
 
 def device_info(entry: ConfigEntry, data: dict[str, Any]) -> dict[str, Any]:
@@ -106,6 +139,41 @@ class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return device
         return None
 
+    def _device_fallback_data(self, device: dict[str, Any]) -> dict[str, Any]:
+        """旧协议（isThingModel=0）设备：直接从 wifiList 字段取 lock_service 属性。"""
+        screen = _nested(device, "screen")
+        pir = _nested(device, "pir")
+        set_pir = _nested(device, "setPir")
+        return {
+            PROP_LOCKED_INSIDE_STATUS: device.get("operatingMode"),
+            PROP_DEFENSE_MODE: device.get("defences"),
+            PROP_DOOR_DIRECTION: device.get("openDirection"),
+            PROP_LOCK_FORCE: device.get("openForce"),
+            PROP_AUTO_CLOSE_LOCK_TIME: device.get("autoRelockTime"),
+            PROP_CLOSE_LOCK_MODE: device.get("closeLockMode")
+            or device.get("lockMode"),
+            PROP_LINGER_DETECTION: pir.get("stayTime")
+            if pir.get("stayTime") is not None
+            else set_pir.get("stay_time"),
+            PROP_LOCK_VOLUME: device.get("volume"),
+            PROP_LANGUAGE: device.get("language"),
+            PROP_LOCK_BODY_TYPE: device.get("lockType")
+            if device.get("lockType") is not None
+            else device.get("lockModel"),
+            PROP_DOUBLE_VERIFY_MODE: device.get("doubleVerify")
+            if device.get("doubleVerify") is not None
+            else device.get("doubleVerification"),
+            PROP_SCREEN_ONOFF: device.get("screenLightSwitch")
+            if device.get("screenLightSwitch") is not None
+            else screen.get("enabled"),
+            PROP_SCREEN_BACKLIGHT: device.get("screenLightLevel")
+            if device.get("screenLightLevel") is not None
+            else screen.get("brightness"),
+            PROP_SCREEN_ACTIVE_TIME: device.get("screenLightTime")
+            if device.get("screenLightTime") is not None
+            else screen.get("duration"),
+        }
+
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             devices = await self.token_manager.async_get_devices()
@@ -133,16 +201,17 @@ class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
             "power": device.get("power"),
             "last_update_time": dt_util.now().strftime("%Y-%m-%d %H:%M:%S"),
-            # 旧协议（isThingModel=0）设备：直接从设备字段取，供传感器回退
+            # 旧协议设备：直接从设备字段取（供传感器回退）
             PROP_BATTERY_LEVEL: device.get("power"),
             PROP_WIFI_RSSI: (
-                device.get("rssi") if device.get("rssi") is not None else device.get("RSSI")
+                device.get("rssi")
+                if device.get("rssi") is not None
+                else device.get("RSSI")
             ),
             PROP_FIRMWARE_VERSION: device.get("wifiVersion") or device.get("wifiVer"),
             PROP_MODEL_VERSION: device.get("lockModel") or device.get("deviceModel"),
-            PROP_DEFENSE_MODE: device.get("defences"),
-            PROP_LOCKED_INSIDE_STATUS: device.get("operatingMode"),
         }
+        data.update(self._device_fallback_data(device))
 
         if bool(device.get("isThingModel") or self.entry.data.get(CONF_IS_THING_MODEL)):
             api = await self.token_manager.async_get_api()

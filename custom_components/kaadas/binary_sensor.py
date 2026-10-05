@@ -13,26 +13,53 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, PROP_DEFENSE_MODE
+from .const import (
+    DOMAIN,
+    PROP_DEFENSE_MODE,
+    PROP_DOUBLE_VERIFY_MODE,
+    PROP_LOCKED_INSIDE_STATUS,
+    PROP_SCREEN_ONOFF,
+)
 from .coordinator import KaadasCoordinator, device_info
 
 
 @dataclass(frozen=True, kw_only=True)
 class KaadasBinarySensorDescription(BinarySensorEntityDescription):
     key: str
+    data_key: str
 
 
 BINARY_SENSORS: tuple[KaadasBinarySensorDescription, ...] = (
     KaadasBinarySensorDescription(
         key="connectivity",
+        data_key="connect_state",
         translation_key="connectivity",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         icon="mdi:wifi",
     ),
     KaadasBinarySensorDescription(
         key="defense_mode",
+        data_key=PROP_DEFENSE_MODE,
         translation_key="defense_mode",
         icon="mdi:shield-lock",
+    ),
+    KaadasBinarySensorDescription(
+        key="locked_inside_status",
+        data_key=PROP_LOCKED_INSIDE_STATUS,
+        translation_key="locked_inside_status",
+        icon="mdi:lock",
+    ),
+    KaadasBinarySensorDescription(
+        key="double_verify_mode",
+        data_key=PROP_DOUBLE_VERIFY_MODE,
+        translation_key="double_verify_mode",
+        icon="mdi:two-factor-authentication",
+    ),
+    KaadasBinarySensorDescription(
+        key="screen_onoff",
+        data_key=PROP_SCREEN_ONOFF,
+        translation_key="screen_onoff",
+        icon="mdi:monitor",
     ),
 )
 
@@ -45,9 +72,9 @@ def _to_bool(value: Any) -> bool | None:
     if isinstance(value, (int, float)):
         return value != 0
     text = str(value).strip().lower()
-    if text in {"true", "1", "on", "yes", "开"}:
+    if text in {"true", "1", "on", "yes", "开", "enabled"}:
         return True
-    if text in {"false", "0", "off", "no", "关"}:
+    if text in {"false", "0", "off", "no", "关", "disabled"}:
         return False
     return None
 
@@ -82,14 +109,11 @@ class KaadasBinarySensor(CoordinatorEntity[KaadasCoordinator], BinarySensorEntit
     @property
     def is_on(self) -> bool | None:
         data = self.coordinator.data or {}
-        if self.entity_description.key == "connectivity":
-            state = data.get("connect_state")
-            if isinstance(state, str):
-                return state.lower() == "online"
-            return None
-        if self.entity_description.key == "defense_mode":
-            return _to_bool(data.get(PROP_DEFENSE_MODE))
-        return None
+        key = self.entity_description.data_key
+        if key == "connect_state":
+            state = data.get(key)
+            return state.lower() == "online" if isinstance(state, str) else None
+        return _to_bool(data.get(key))
 
     @property
     def available(self) -> bool:

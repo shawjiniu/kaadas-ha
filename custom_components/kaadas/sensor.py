@@ -17,18 +17,32 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    PROP_AUTO_CLOSE_LOCK_TIME,
     PROP_BATTERY_LEVEL,
+    PROP_DOOR_DIRECTION,
     PROP_FIRMWARE_VERSION,
+    PROP_LANGUAGE,
+    PROP_LINGER_DETECTION,
+    PROP_LOCK_BODY_TYPE,
+    PROP_LOCK_FORCE,
+    PROP_LOCK_VOLUME,
     PROP_MODEL_VERSION,
+    PROP_SCREEN_ACTIVE_TIME,
+    PROP_SCREEN_BACKLIGHT,
     PROP_WIFI_RSSI,
 )
 from .coordinator import KaadasCoordinator, device_info
+
+DOOR_DIRECTION_MAP = {"1": "右开", "2": "左开"}
+LOCK_FORCE_MAP = {"1": "更高", "2": "高", "3": "低"}
+LANGUAGE_MAP = {"1": "中文", "2": "英文", "zh": "中文", "en": "英文"}
 
 
 @dataclass(frozen=True, kw_only=True)
 class KaadasSensorDescription(SensorEntityDescription):
     key: str
     data_key: str
+    value_map: dict[str, str] | None = None
 
 
 SENSORS: tuple[KaadasSensorDescription, ...] = (
@@ -61,6 +75,66 @@ SENSORS: tuple[KaadasSensorDescription, ...] = (
         data_key=PROP_MODEL_VERSION,
         translation_key="model_version",
         icon="mdi:information-outline",
+    ),
+    KaadasSensorDescription(
+        key="lock_body_type",
+        data_key=PROP_LOCK_BODY_TYPE,
+        translation_key="lock_body_type",
+        icon="mdi:door-closed-lock",
+    ),
+    KaadasSensorDescription(
+        key="door_direction",
+        data_key=PROP_DOOR_DIRECTION,
+        translation_key="door_direction",
+        value_map=DOOR_DIRECTION_MAP,
+        icon="mdi:arrow-left-right",
+    ),
+    KaadasSensorDescription(
+        key="lock_force",
+        data_key=PROP_LOCK_FORCE,
+        translation_key="lock_force",
+        value_map=LOCK_FORCE_MAP,
+        icon="mdi:gauge",
+    ),
+    KaadasSensorDescription(
+        key="auto_close_lock_time",
+        data_key=PROP_AUTO_CLOSE_LOCK_TIME,
+        translation_key="auto_close_lock_time",
+        native_unit_of_measurement="s",
+        icon="mdi:timer-lock",
+    ),
+    KaadasSensorDescription(
+        key="linger_detection",
+        data_key=PROP_LINGER_DETECTION,
+        translation_key="linger_detection",
+        native_unit_of_measurement="s",
+        icon="mdi:motion-sensor",
+    ),
+    KaadasSensorDescription(
+        key="lock_volume",
+        data_key=PROP_LOCK_VOLUME,
+        translation_key="lock_volume",
+        icon="mdi:volume-high",
+    ),
+    KaadasSensorDescription(
+        key="language",
+        data_key=PROP_LANGUAGE,
+        translation_key="language",
+        value_map=LANGUAGE_MAP,
+        icon="mdi:translate",
+    ),
+    KaadasSensorDescription(
+        key="screen_backlight",
+        data_key=PROP_SCREEN_BACKLIGHT,
+        translation_key="screen_backlight",
+        icon="mdi:brightness-6",
+    ),
+    KaadasSensorDescription(
+        key="screen_active_time",
+        data_key=PROP_SCREEN_ACTIVE_TIME,
+        translation_key="screen_active_time",
+        native_unit_of_measurement="s",
+        icon="mdi:clock-outline",
     ),
     KaadasSensorDescription(
         key="last_update_time",
@@ -103,6 +177,8 @@ class KaadasSensor(CoordinatorEntity[KaadasCoordinator], SensorEntity):
         value = data.get(self.entity_description.data_key)
         if value in (None, ""):
             return None
+        if self.entity_description.value_map:
+            return self.entity_description.value_map.get(str(value), value)
         return value
 
     @property

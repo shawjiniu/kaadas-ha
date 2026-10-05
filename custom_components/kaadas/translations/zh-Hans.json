@@ -67,11 +67,23 @@
       "wifi_rssi": { "name": "WiFi 信号" },
       "firmware_version": { "name": "固件版本" },
       "model_version": { "name": "物模型版本" },
+      "lock_body_type": { "name": "锁体类型" },
+      "door_direction": { "name": "开门方向" },
+      "lock_force": { "name": "开锁力量" },
+      "auto_close_lock_time": { "name": "自动上锁时间" },
+      "linger_detection": { "name": "逗留检测" },
+      "lock_volume": { "name": "音量" },
+      "language": { "name": "语言" },
+      "screen_backlight": { "name": "屏幕背光" },
+      "screen_active_time": { "name": "亮屏时间" },
       "last_update_time": { "name": "数据更新时间" }
     },
     "binary_sensor": {
       "connectivity": { "name": "在线状态" },
-      "defense_mode": { "name": "布防模式" }
+      "defense_mode": { "name": "布防模式" },
+      "locked_inside_status": { "name": "反锁/隐私模式" },
+      "double_verify_mode": { "name": "双重验证" },
+      "screen_onoff": { "name": "屏幕" }
     }
   }
 }
