@@ -156,6 +156,7 @@ class KaadasLockCard extends HTMLElement {
     this._config = {
       show_chips: true,
       show_records: true,
+      show_update_time: true,
       records_limit: 20,
       ...config,
     };
@@ -361,7 +362,11 @@ class KaadasLockCard extends HTMLElement {
               : ""
           }
 
-          <div class="updated">数据更新时间：${this._esc(updateTime)}</div>
+          ${
+            cfg.show_update_time !== false
+              ? `<div class="updated">数据更新时间：${this._esc(updateTime)}</div>`
+              : ""
+          }
         </div>
       </ha-card>
     `;
@@ -512,8 +517,15 @@ class KaadasLockCardEditor extends HTMLElement {
           <ha-entity-picker id="entity" label="门锁实体 (lock.*)" allow-custom-entity></ha-entity-picker>
           <ha-textfield id="name" label="设备名称（可选）"></ha-textfield>
           <ha-textfield id="model" label="设备型号（可选）"></ha-textfield>
-          <ha-switch id="show_chips" label="显示布防/逗留栏"></ha-switch>
-          <ha-switch id="show_records" label="显示消息记录"></ha-switch>
+          <ha-formfield label="显示布防/逗留栏">
+            <ha-switch id="show_chips"></ha-switch>
+          </ha-formfield>
+          <ha-formfield label="显示消息记录">
+            <ha-switch id="show_records"></ha-switch>
+          </ha-formfield>
+          <ha-formfield label="显示数据更新时间">
+            <ha-switch id="show_update_time"></ha-switch>
+          </ha-formfield>
         </div>`;
       this._built = true;
       const fire = () => {
@@ -522,9 +534,10 @@ class KaadasLockCardEditor extends HTMLElement {
         const model = this.querySelector("#model").value;
         const show_chips = this.querySelector("#show_chips").checked;
         const show_records = this.querySelector("#show_records").checked;
+        const show_update_time = this.querySelector("#show_update_time").checked;
         this.dispatchEvent(
           new CustomEvent("config-changed", {
-            detail: { config: { ...this._config, entity, name, model, show_chips, show_records } },
+            detail: { config: { ...this._config, entity, name, model, show_chips, show_records, show_update_time } },
             bubbles: true,
             composed: true,
           })
@@ -535,6 +548,7 @@ class KaadasLockCardEditor extends HTMLElement {
       this.querySelector("#model").addEventListener("change", fire);
       this.querySelector("#show_chips").addEventListener("change", fire);
       this.querySelector("#show_records").addEventListener("change", fire);
+      this.querySelector("#show_update_time").addEventListener("change", fire);
     }
     const e = this.querySelector("#entity");
     e.hass = this._hass;
@@ -543,6 +557,7 @@ class KaadasLockCardEditor extends HTMLElement {
     this.querySelector("#model").value = this._config?.model || "";
     this.querySelector("#show_chips").checked = this._config?.show_chips !== false;
     this.querySelector("#show_records").checked = this._config?.show_records !== false;
+    this.querySelector("#show_update_time").checked = this._config?.show_update_time !== false;
   }
 }
 
