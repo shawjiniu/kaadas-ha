@@ -1,15 +1,15 @@
 /**
  * 凯迪仕智能门锁 Lovelace 卡片
  *
- * 布局（参考设计图）：
+ * 布局：
  *   [logo]   设备名称              [状态图标]
  *            设备型号               锁状态
- *               数据更新时间
- *   ┌────────────┐  ┌────────────┐
- *   │  电量显示   │  │ WiFi信号   │
- *   └────────────┘  └────────────┘
- *   消息记录列表
- *   时间  消息
+ *   ┌──────────────┐  ┌──────────────┐
+ *   │ 电量(环形图) │  │ WiFi(信号图) │
+ *   └──────────────┘  └──────────────┘
+ *   [布防模式][逗留检测][反锁/隐私][在线状态]
+ *   消息记录（滚动，5 条）
+ *   数据更新时间（最底端）
  */
 
 const CARD_VERSION = "0.1.0";
@@ -24,6 +24,12 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
+function toBool(v) {
+  if (v === true || v === 1 || v === "1" || v === "on" || v === "open" || v === "开启") return true;
+  if (v === false || v === 0 || v === "0" || v === "off" || v === "close" || v === "关闭") return false;
+  return null;
+}
+
 function fmtTime(value) {
   if (value === undefined || value === null || value === "") return "—";
   let ts = Number(value);
@@ -35,51 +41,92 @@ function fmtTime(value) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-function batteryIcon(level) {
-  if (level === null) return "mdi:battery-unknown";
-  if (level >= 95) return "mdi:battery";
-  if (level >= 80) return "mdi:battery-80";
-  if (level >= 60) return "mdi:battery-60";
-  if (level >= 40) return "mdi:battery-40";
-  if (level >= 20) return "mdi:battery-20";
-  return "mdi:battery-alert";
+/** RSSI(dBm) 映射为 0-100 的信号质量 */
+function rssiQuality(rssi) {
+  if (rssi === null) return 0;
+  return Math.max(0, Math.min(100, Math.round(((rssi + 90) / 60) * 100)));
 }
 
-function wifiIcon(rssi) {
-  if (rssi === null) return "mdi:wifi-off";
-  if (rssi >= -60) return "mdi:wifi-strength-4";
-  if (rssi >= -70) return "mdi:wifi-strength-3";
-  if (rssi >= -80) return "mdi:wifi-strength-2";
-  return "mdi:wifi-strength-1";
+/* ------------------------------- 记录字段枚举 ------------------------------ */
+
+const PWD_TYPE = {
+  0: "密码", 1: "密码", 2: "指纹", 3: "卡片", 4: "人脸",
+  5: "时效密码", 6: "周期密码", 12: "掌静脉", 19: "门磁",
+};
+const OPERATE_TYPE = {
+  1: "开锁成功", 2: "门已上锁", 3: "密码", 4: "密码", 5: "修改管理员密码",
+  6: "自动模式", 7: "手动模式", 8: "常用模式切换", 9: "安全模式切换",
+  10: "反锁模式", 11: "布防模式", 12: "修改密码昵称", 13: "添加分享用户",
+  14: "删除分享用户", 15: "修改管理", 16: "添加管理员", 17: "开启节能模式",
+  18: "关闭节能模式", 19: "门锁已恢复出厂设置", 20: "室内反锁已开启",
+  21: "室内反锁已关闭",
+};
+
+function getField(record, ...names) {
+  for (const n of names) {
+    if (record && record[n] !== undefined && record[n] !== null && record[n] !== "") {
+      return record[n];
+    }
+  }
+  return undefined;
 }
 
-/** 从一条操作记录里尽力提取一句可读描述 */
+function formatPwdNum(pwdNum) {
+  const map = {
+    100: "使用机械方式开锁成功", 101: "远程开锁成功", 102: "室内open键开锁成功",
+    103: "APP开锁成功", 104: "BLE自动开锁成功", 106: "室内感应把手开锁成功",
+    250: "使用一次性密码开锁成功", 252: "使用一次性密码开锁", 253: "访客密码开锁成功",
+    254: "管理员开锁成功", 255: "管理员开锁成功",
+  };
+  if (map[pwdNum] !== undefined) return map[pwdNum];
+  const n = Number(pwdNum);
+  if (Number.isFinite(n) && n > 0) return "编号" + String(n).padStart(2, "0");
+  return "";
+}
+
+/** 把一条操作记录转成「操作人 + 操作内容」 */
 function recordMessage(record) {
-  if (!record || typeof record !== "object") return String(record ?? "");
-  const candidates = [
-    record.message,
-    record.msg,
-    record.eventName,
-    record.operationName,
-    record.typeName,
-    record.openTypeName,
-    record.unlockTypeName,
-    record.userName,
-    record.name,
-    record.type,
-    record.openType,
-  ];
-  for (const c of candidates) {
-    if (c !== undefined && c !== null && String(c).trim() !== "") return String(c).trim();
+  if (!record || typeof record !== "object") return String(record ?? "—");
+  const operator = String(getField(record, "userNickname", "userName", "name", "user") ?? "").trim();
+  const type = Number(getField(record, "type"));
+  const pwdType = Number(getField(record, "pwdType", "keyType", "functionId"));
+  const pwdDetailType = Number(getField(record, "pwdDetailType"));
+  const pwdNum = getField(record, "pwdNum", "keyNum", "keyId", "pwdId");
+  const pwdNickname = String(getField(record, "pwdNickname", "keyName", "pwdName") ?? "").trim();
+
+  const pwdTypeText = Number.isFinite(pwdType) && PWD_TYPE[pwdType] ? PWD_TYPE[pwdType] : "";
+  const pwdDetailText = Number.isFinite(pwdDetailType) && PWD_TYPE[pwdDetailType] ? PWD_TYPE[pwdDetailType] : "";
+  const pwdNumText = formatPwdNum(pwdNum);
+  const isNumberedKey = pwdNumText.startsWith("编号");
+
+  let content = "";
+  if (type === 1) {
+    if (pwdDetailText) {
+      content = `使用${pwdDetailText}开锁成功`;
+    } else if (isNumberedKey && Number(pwdNum) === 0 && (pwdType === 1 || pwdType === 2)) {
+      content = `使用管理员${pwdTypeText}开锁成功`;
+    } else if (isNumberedKey && pwdTypeText) {
+      content = `使用${pwdTypeText}${pwdNickname || pwdNumText}开锁成功`;
+    } else if (pwdNumText) {
+      content = pwdNumText;
+    } else if (pwdTypeText) {
+      content = `使用${pwdTypeText}开锁成功`;
+    } else {
+      content = "开锁成功";
+    }
+  } else if (type === 2) {
+    content = "门已上锁";
+  } else if (type === 3) {
+    content = `添加${pwdNickname || `“${pwdTypeText}${pwdNumText}”`}`;
+  } else if (type === 4) {
+    content = `删除${pwdNickname || pwdNumText}的${pwdTypeText}`;
+  } else if (Number.isFinite(type) && OPERATE_TYPE[type]) {
+    content = OPERATE_TYPE[type];
+  } else {
+    const keys = Object.keys(record).filter((k) => k !== "id" && k !== "time");
+    content = keys.slice(0, 4).map((k) => `${k}=${record[k]}`).join("  ") || "—";
   }
-  const keys = Object.keys(record).filter((k) => k !== "id" && k !== "time");
-  if (keys.length) {
-    return keys
-      .slice(0, 4)
-      .map((k) => `${k}=${record[k]}`)
-      .join("  ");
-  }
-  return "—";
+  return operator ? `${operator} ${content}` : content;
 }
 
 /* --------------------------------- 卡片本体 -------------------------------- */
@@ -114,14 +161,14 @@ class KaadasLockCard extends HTMLElement {
     if (!config || !config.entity) {
       throw new Error("请指定 entity（凯迪仕门锁实体，例如 lock.kaidas_xxx）");
     }
-    this._config = { show_records: true, records_limit: 10, ...config };
+    this._config = { show_records: true, records_limit: 5, ...config };
     this._rendered = false;
   }
 
   set hass(hass) {
     this._hass = hass;
     const sig = this._signature();
-    if (sig === this._sig) return; // 相关状态未变，跳过重绘
+    if (sig === this._sig) return;
     this._sig = sig;
     this._render();
   }
@@ -130,7 +177,6 @@ class KaadasLockCard extends HTMLElement {
     return 6;
   }
 
-  /** 只关心这几个实体的状态/属性变化 */
   _signature() {
     const r = this._resolve();
     const ids = [
@@ -140,6 +186,10 @@ class KaadasLockCard extends HTMLElement {
       r.byKey.wifi_rssi,
       r.byKey.last_update_time,
       r.byKey.last_operation_time,
+      r.byKey.defense_mode,
+      r.byKey.linger_detection,
+      r.byKey.locked_inside_status,
+      r.byKey.connectivity,
     ];
     return ids
       .map((id) => {
@@ -149,18 +199,10 @@ class KaadasLockCard extends HTMLElement {
       .join("~");
   }
 
-  /* ------------------------------ 数据解析 ------------------------------ */
-
   _resolve() {
     const hass = this._hass;
     const cfg = this._config;
-    const out = {
-      byKey: {},
-      device: null,
-      lockEntity: null,
-      name: cfg.name,
-      model: cfg.model,
-    };
+    const out = { byKey: {}, device: null, lockEntity: null, name: cfg.name, model: cfg.model };
     if (!hass) return out;
 
     const entityId = cfg.entity;
@@ -184,6 +226,10 @@ class KaadasLockCard extends HTMLElement {
     if (cfg.battery_entity) out.byKey.battery = cfg.battery_entity;
     if (cfg.wifi_entity) out.byKey.wifi_rssi = cfg.wifi_entity;
     if (cfg.records_entity) out.byKey.last_operation_time = cfg.records_entity;
+    if (cfg.defense_entity) out.byKey.defense_mode = cfg.defense_entity;
+    if (cfg.linger_entity) out.byKey.linger_detection = cfg.linger_entity;
+    if (cfg.inside_entity) out.byKey.locked_inside_status = cfg.inside_entity;
+    if (cfg.connectivity_entity) out.byKey.connectivity = cfg.connectivity_entity;
 
     out.name = out.name || out.device?.name_by_user || out.device?.name || "凯迪仕智能门锁";
     out.model = out.model || out.device?.model || "";
@@ -194,12 +240,10 @@ class KaadasLockCard extends HTMLElement {
     return entityId ? this._hass?.states?.[entityId] : undefined;
   }
 
-  /* -------------------------------- 渲染 -------------------------------- */
-
   _render() {
     if (!this._hass) return;
     const r = this._resolve();
-    const hass = this._hass;
+    const cfg = this._config;
 
     const lockState = this._state(r.lockEntity);
     const statusState = this._state(r.byKey.lock_status);
@@ -207,6 +251,10 @@ class KaadasLockCard extends HTMLElement {
     const wifiState = this._state(r.byKey.wifi_rssi);
     const updateState = this._state(r.byKey.last_update_time);
     const recordsState = this._state(r.byKey.last_operation_time);
+    const defenseState = this._state(r.byKey.defense_mode);
+    const lingerState = this._state(r.byKey.linger_detection);
+    const insideState = this._state(r.byKey.locked_inside_status);
+    const connState = this._state(r.byKey.connectivity);
 
     const unlocked = lockState?.state === "unlocked";
     const lockText =
@@ -222,13 +270,28 @@ class KaadasLockCard extends HTMLElement {
     const lockIcon = unlocked ? "mdi:lock-open-variant" : "mdi:lock";
     const lockColor = unlocked ? "var(--warning-color, #ffa726)" : "var(--success-color, #4caf50)";
 
+    // 电量 / WiFi 图表数据
     const battery = num(batteryState?.state);
     const rssi = num(wifiState?.state);
+    const batteryPct = battery === null ? 0 : Math.max(0, Math.min(100, battery));
+    const quality = rssiQuality(rssi);
+    const bars = quality === 0 ? 0 : Math.max(1, Math.ceil(quality / 25));
+    const CIRC = 2 * Math.PI * 42;
 
-    const updateTime = updateState?.state && updateState.state !== "unknown"
-      ? updateState.state
-      : "—";
+    // 四个状态项
+    const defenseOn = toBool(defenseState?.state);
+    const insideOn = toBool(insideState?.state);
+    const online = connState?.state === "on";
+    const linger = num(lingerState?.state);
+    const lingerText = linger === null ? "—" : linger === 0 ? "关闭" : linger + "秒";
+    const items = [
+      { label: "布防模式", icon: "mdi:shield-lock", on: defenseOn === true, text: defenseOn === null ? "—" : defenseOn ? "开" : "关" },
+      { label: "逗留检测", icon: "mdi:motion-sensor", on: linger !== null && linger > 0, text: lingerText },
+      { label: "反锁/隐私", icon: "mdi:lock", on: insideOn === true, text: insideOn === null ? "—" : insideOn ? "开" : "关" },
+      { label: "在线状态", icon: "mdi:wifi", on: online, text: online ? "在线" : "离线" },
+    ];
 
+    const updateTime = updateState?.state && updateState.state !== "unknown" ? updateState.state : "—";
     const records = Array.isArray(recordsState?.attributes?.["操作记录"])
       ? recordsState.attributes["操作记录"]
       : [];
@@ -252,46 +315,70 @@ class KaadasLockCard extends HTMLElement {
             </div>
           </div>
 
-          <div class="updated">数据更新：${this._esc(updateTime)}</div>
-
-          <div class="stats">
-            <div class="stat">
-              <ha-icon icon="${batteryIcon(battery)}"></ha-icon>
-              <div class="stat-body">
-                <div class="stat-label">电量</div>
-                <div class="stat-value">${battery === null ? "—" : battery + " %"}</div>
-              </div>
+          <div class="charts">
+            <div class="chart">
+              <svg viewBox="0 0 100 100" class="gauge">
+                <circle class="gauge-track" cx="50" cy="50" r="42" />
+                <circle class="gauge-fill" cx="50" cy="50" r="42"
+                  stroke-dasharray="${((batteryPct / 100) * CIRC).toFixed(1)} ${CIRC.toFixed(1)}" />
+                <text class="gauge-value" x="50" y="47" text-anchor="middle">${battery === null ? "—" : battery + "%"}</text>
+                <text class="gauge-label" x="50" y="62" text-anchor="middle">电量</text>
+              </svg>
             </div>
-            <div class="stat">
-              <ha-icon icon="${wifiIcon(rssi)}"></ha-icon>
-              <div class="stat-body">
-                <div class="stat-label">WiFi 信号</div>
-                <div class="stat-value">${rssi === null ? "—" : rssi + " dBm"}</div>
+            <div class="chart">
+              <div class="signal">
+                ${[0, 1, 2, 3]
+                  .map(
+                    (i) =>
+                      `<span class="bar ${i < bars ? "on" : ""}" style="height:${8 + i * 6}px"></span>`
+                  )
+                  .join("")}
               </div>
+              <div class="signal-value">${rssi === null ? "—" : rssi + " dBm"}</div>
+              <div class="signal-label">WiFi 信号</div>
             </div>
           </div>
 
+          <div class="chips">
+            ${items
+              .map(
+                (it) => `
+                <div class="chip ${it.on ? "on" : ""}">
+                  <ha-icon icon="${it.icon}"></ha-icon>
+                  <div class="chip-body">
+                    <span class="chip-label">${it.label}</span>
+                    <span class="chip-value">${this._esc(it.text)}</span>
+                  </div>
+                </div>`
+              )
+              .join("")}
+          </div>
+
           ${
-            this._config.show_records
+            cfg.show_records
               ? `<div class="records">
                    <div class="records-title">消息记录</div>
-                   ${
-                     records.length
-                       ? `<div class="records-list">${records
-                           .slice(0, this._config.records_limit)
-                           .map(
-                             (rec) => `
+                   <div class="records-list">
+                     ${
+                       records.length
+                         ? records
+                             .slice(0, cfg.records_limit)
+                             .map(
+                               (rec) => `
                          <div class="record">
                            <span class="record-time">${this._esc(fmtTime(rec?.time))}</span>
                            <span class="record-msg">${this._esc(recordMessage(rec))}</span>
                          </div>`
-                           )
-                           .join("")}</div>`
-                       : `<div class="records-empty">暂无记录</div>`
-                   }
+                             )
+                             .join("")
+                         : `<div class="records-empty">暂无记录</div>`
+                     }
+                   </div>
                  </div>`
               : ""
           }
+
+          <div class="updated">数据更新时间：${this._esc(updateTime)}</div>
         </div>
       </ha-card>
     `;
@@ -300,7 +387,6 @@ class KaadasLockCard extends HTMLElement {
       this.shadowRoot.innerHTML = `<style>${KaadasLockCard.styles}</style>${html}`;
       this._rendered = true;
     } else {
-      // 仅更新内容，避免整卡重绘造成闪烁
       const card = this.shadowRoot.querySelector("ha-card");
       if (card) card.outerHTML = html.trim();
       else this.shadowRoot.innerHTML = `<style>${KaadasLockCard.styles}</style>${html}`;
@@ -321,7 +407,7 @@ class KaadasLockCard extends HTMLElement {
     return `
       :host { display: block; }
       ha-card { overflow: hidden; }
-      .wrap { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+      .wrap { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 
       .header { display: flex; align-items: center; gap: 14px; }
       .logo {
@@ -343,7 +429,6 @@ class KaadasLockCard extends HTMLElement {
         font-size: 0.85rem; color: var(--secondary-text-color); margin-top: 2px;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
-
       .status { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 0 0 auto; }
       .status-icon {
         width: 46px; height: 46px; border-radius: 50%;
@@ -353,29 +438,51 @@ class KaadasLockCard extends HTMLElement {
       .status-icon ha-icon { --mdc-icon-size: 24px; }
       .status-text { font-size: 0.82rem; color: var(--secondary-text-color); }
 
-      .updated {
-        text-align: center; font-size: 0.8rem; color: var(--secondary-text-color);
-        border-bottom: 1px solid var(--divider-color, #e0e0e0); padding-bottom: 10px;
+      /* 图表区：电量环形图 + WiFi 信号图 */
+      .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .chart {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 12px; border-radius: 12px; background: var(--secondary-background-color, #f2f4f7);
+        min-height: 140px;
       }
+      .gauge { width: 110px; height: 110px; }
+      .gauge-track { fill: none; stroke: var(--divider-color, #e0e0e0); stroke-width: 10; }
+      .gauge-fill {
+        fill: none; stroke: #3F8CFF; stroke-width: 10; stroke-linecap: round;
+        transform: rotate(-90deg); transform-origin: 50% 50%;
+        transition: stroke-dasharray 0.5s ease;
+      }
+      .gauge-value { font-size: 20px; font-weight: 700; fill: var(--primary-text-color); }
+      .gauge-label { font-size: 11px; fill: var(--secondary-text-color); }
 
-      .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .stat {
-        display: flex; align-items: center; gap: 10px; padding: 12px;
-        border-radius: 12px; background: var(--secondary-background-color, #f2f4f7);
+      .signal { display: flex; align-items: flex-end; gap: 4px; height: 32px; }
+      .signal .bar {
+        width: 8px; border-radius: 2px;
+        background: var(--divider-color, #e0e0e0);
+        transition: background 0.3s;
       }
-      .stat ha-icon { color: #3F8CFF; --mdc-icon-size: 26px; flex: 0 0 auto; }
-      .stat-body { min-width: 0; }
-      .stat-label { font-size: 0.78rem; color: var(--secondary-text-color); }
-      .stat-value {
-        font-size: 1.05rem; font-weight: 600; color: var(--primary-text-color);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
+      .signal .bar.on { background: #3F8CFF; }
+      .signal-value { margin-top: 8px; font-size: 1.05rem; font-weight: 600; color: var(--primary-text-color); }
+      .signal-label { margin-top: 2px; font-size: 0.78rem; color: var(--secondary-text-color); }
 
+      /* 四个状态项 */
+      .chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .chip {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 4px; padding: 8px 4px; border-radius: 10px;
+        background: var(--secondary-background-color, #f2f4f7);
+        text-align: center;
+      }
+      .chip ha-icon { --mdc-icon-size: 22px; color: var(--secondary-text-color); }
+      .chip.on ha-icon { color: #3F8CFF; }
+      .chip-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+      .chip-label { font-size: 0.72rem; color: var(--secondary-text-color); white-space: nowrap; }
+      .chip-value { font-size: 0.85rem; font-weight: 600; color: var(--primary-text-color); white-space: nowrap; }
+
+      /* 消息记录：滚动，最多 5 条可见 */
       .records { display: flex; flex-direction: column; gap: 6px; }
-      .records-title {
-        font-size: 0.85rem; font-weight: 600; color: var(--primary-text-color);
-      }
-      .records-list { display: flex; flex-direction: column; }
+      .records-title { font-size: 0.85rem; font-weight: 600; color: var(--primary-text-color); }
+      .records-list { display: flex; flex-direction: column; max-height: 190px; overflow-y: auto; }
       .record {
         display: flex; gap: 10px; padding: 7px 0; font-size: 0.82rem;
         border-bottom: 1px dashed var(--divider-color, #e0e0e0);
@@ -389,12 +496,17 @@ class KaadasLockCard extends HTMLElement {
         flex: 1 1 auto; color: var(--primary-text-color);
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
-      .records-empty {
-        font-size: 0.82rem; color: var(--secondary-text-color); padding: 6px 0;
+      .records-empty { font-size: 0.82rem; color: var(--secondary-text-color); padding: 6px 0; }
+
+      /* 数据更新时间：最底端 */
+      .updated {
+        text-align: center; font-size: 0.78rem; color: var(--secondary-text-color);
+        border-top: 1px solid var(--divider-color, #e0e0e0); padding-top: 10px;
       }
 
       @media (max-width: 380px) {
-        .stats { grid-template-columns: 1fr; }
+        .charts { grid-template-columns: 1fr; }
+        .chips { grid-template-columns: repeat(2, 1fr); }
       }
     `;
   }
