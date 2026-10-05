@@ -25,6 +25,7 @@ from .const import (
     PROP_LINGER_DETECTION,
     PROP_LOCK_BODY_TYPE,
     PROP_LOCK_FORCE,
+    PROP_LOCK_STATUS,
     PROP_LOCK_VOLUME,
     PROP_MODEL_VERSION,
     PROP_SCREEN_ACTIVE_TIME,
@@ -36,6 +37,7 @@ from .coordinator import KaadasCoordinator, device_info
 DOOR_DIRECTION_MAP = {"1": "右开", "2": "左开"}
 LOCK_FORCE_MAP = {"1": "更高", "2": "高", "3": "低"}
 LANGUAGE_MAP = {"1": "中文", "2": "英文", "zh": "中文", "en": "英文"}
+LOCK_STATUS_MAP = {"1": "开锁", "2": "关锁", "3": "异常"}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -137,6 +139,40 @@ SENSORS: tuple[KaadasSensorDescription, ...] = (
         icon="mdi:clock-outline",
     ),
     KaadasSensorDescription(
+        key="lock_status",
+        data_key=PROP_LOCK_STATUS,
+        translation_key="lock_status",
+        value_map=LOCK_STATUS_MAP,
+        icon="mdi:lock",
+    ),
+    KaadasSensorDescription(
+        key="last_operation_time",
+        data_key="last_operation_time",
+        translation_key="last_operation_time",
+        icon="mdi:history",
+    ),
+    KaadasSensorDescription(
+        key="seven_day_operation_count",
+        data_key="seven_day_operation_count",
+        translation_key="seven_day_operation_count",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:door-open",
+    ),
+    KaadasSensorDescription(
+        key="seven_day_doorbell_count",
+        data_key="seven_day_doorbell_count",
+        translation_key="seven_day_doorbell_count",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:bell-ring",
+    ),
+    KaadasSensorDescription(
+        key="seven_day_alarm_count",
+        data_key="seven_day_alarm_count",
+        translation_key="seven_day_alarm_count",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:alert",
+    ),
+    KaadasSensorDescription(
         key="last_update_time",
         data_key="last_update_time",
         translation_key="last_update_time",
@@ -180,6 +216,20 @@ class KaadasSensor(CoordinatorEntity[KaadasCoordinator], SensorEntity):
         if self.entity_description.value_map:
             return self.entity_description.value_map.get(str(value), value)
         return value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        if self.entity_description.key != "last_operation_time":
+            return None
+        data = self.coordinator.data or {}
+        attrs: dict[str, Any] = {}
+        records = data.get("operation_records")
+        if records:
+            attrs["操作记录"] = records[:20]
+        stats = data.get("seven_day_stats")
+        if stats:
+            attrs["近7天统计"] = stats
+        return attrs or None
 
     @property
     def device_info(self) -> dict[str, Any]:

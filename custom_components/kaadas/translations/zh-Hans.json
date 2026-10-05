@@ -76,6 +76,11 @@
       "language": { "name": "语言" },
       "screen_backlight": { "name": "屏幕背光" },
       "screen_active_time": { "name": "亮屏时间" },
+      "lock_status": { "name": "锁状态" },
+      "last_operation_time": { "name": "最近操作时间" },
+      "seven_day_operation_count": { "name": "近7天开锁次数" },
+      "seven_day_doorbell_count": { "name": "近7天门铃次数" },
+      "seven_day_alarm_count": { "name": "近7天报警次数" },
       "last_update_time": { "name": "数据更新时间" }
     },
     "binary_sensor": {
