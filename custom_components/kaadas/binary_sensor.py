@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, PROP_DEFENSE_MODE
-from .coordinator import KaadasCoordinator
+from .coordinator import KaadasCoordinator, device_info
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -94,3 +94,7 @@ class KaadasBinarySensor(CoordinatorEntity[KaadasCoordinator], BinarySensorEntit
     @property
     def available(self) -> bool:
         return super().available and self.coordinator.data is not None
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        return device_info(self.entry, self.coordinator.data or {})

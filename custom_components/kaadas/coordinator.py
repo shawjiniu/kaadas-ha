@@ -10,8 +10,10 @@ from homeassistant.util import dt as dt_util
 
 from .api import KaadasApiError, KaadasAuthError
 from .const import (
+    CONF_DEVICE_MODEL,
     CONF_ESN,
     CONF_IS_THING_MODEL,
+    CONF_NICKNAME,
     CONF_WIFI_SN,
     DOMAIN,
     PROP_BATTERY_LEVEL,
@@ -57,6 +59,25 @@ def _find_key(obj: Any, key: str) -> Any:
     return None
 
 
+def device_info(entry: ConfigEntry, data: dict[str, Any]) -> dict[str, Any]:
+    """生成统一的设备信息，供各实体平台挂到同一个设备下。"""
+    device = data.get("device") or {}
+    wifi_sn = str(device.get("wifiSN") or device.get("esn") or entry.entry_id)
+    nickname = str(entry.data.get(CONF_NICKNAME) or wifi_sn)
+    model = str(
+        entry.data.get(CONF_DEVICE_MODEL)
+        or device.get("abbreviation")
+        or device.get("lockModel")
+        or "凯迪仕智能门锁"
+    )
+    return {
+        "identifiers": {(DOMAIN, wifi_sn)},
+        "name": f"凯迪仕 {nickname}",
+        "manufacturer": "凯迪仕 Kaadas",
+        "model": model,
+    }
+
+
 class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """数据协调器：由 WebSocket 实时推送驱动刷新，不自动轮询。"""
 
@@ -90,8 +111,10 @@ class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             devices = await self.token_manager.async_get_devices()
         except KaadasAuthError as err:
             # reauth 已在 token_manager 内触发
+            _LOGGER.error("凯迪仕认证失败：%s", err)
             raise UpdateFailed(f"登录已过期，请重新认证：{err}") from err
         except KaadasApiError as err:
+            _LOGGER.error("凯迪仕接口错误：%s", err)
             raise UpdateFailed(str(err)) from err
 
         wifi_sn = self._wifi_sn()

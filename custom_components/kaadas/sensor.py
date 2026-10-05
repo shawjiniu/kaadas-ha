@@ -22,7 +22,7 @@ from .const import (
     PROP_MODEL_VERSION,
     PROP_WIFI_RSSI,
 )
-from .coordinator import KaadasCoordinator
+from .coordinator import KaadasCoordinator, device_info
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -104,3 +104,7 @@ class KaadasSensor(CoordinatorEntity[KaadasCoordinator], SensorEntity):
         if value in (None, ""):
             return None
         return value
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        return device_info(self.entry, self.coordinator.data or {})

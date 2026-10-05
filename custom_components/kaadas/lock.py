@@ -16,7 +16,7 @@ from .const import (
     LOCK_STATUS_UNLOCKED,
     PROP_LOCK_STATUS,
 )
-from .coordinator import KaadasCoordinator
+from .coordinator import KaadasCoordinator, device_info
 
 
 async def async_setup_entry(
@@ -74,13 +74,4 @@ class KaadasLock(CoordinatorEntity[KaadasCoordinator], LockEntity):
 
     @property
     def device_info(self) -> dict[str, Any]:
-        data = self.coordinator.data or {}
-        device = data.get("device") or {}
-        wifi_sn = str(device.get("wifiSN") or device.get("esn") or self.entry.entry_id)
-        model = self.entry.data.get("device_model") or device.get("abbreviation") or "凯迪仕智能门锁"
-        return {
-            "identifiers": {(DOMAIN, wifi_sn)},
-            "name": f"凯迪仕 {self.entry.data.get('nickname') or wifi_sn}",
-            "manufacturer": "凯迪仕 Kaadas",
-            "model": model,
-        }
+        return device_info(self.entry, self.coordinator.data or {})
