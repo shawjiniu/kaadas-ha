@@ -67,14 +67,38 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     flag = f"{DOMAIN}_frontend_registered"
     if hass.data.get(flag):
         return
-    try:
-        from homeassistant.components import frontend
-        from homeassistant.components.http import StaticPathConfig
-    except ImportError:  # 没有前端组件时静默跳过
-        return
 
     base = Path(__file__).parent
+
+    # 1) 注册静态路径（卡片 JS + 品牌图标）
     try:
+        await _async_register_static_paths(hass, base)
+    except Exception as err:  # noqa: BLE001 - 静态路径失败不阻塞后续
+        _LOGGER.error("凯迪仕静态路径注册失败：%s", err)
+
+    # 2) 注入额外 JS 模块
+    try:
+        from homeassistant.components import frontend
+
+        frontend.add_extra_js_url(hass, f"{FRONTEND_URL}/{CARD_JS}")
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.error("凯迪仕卡片资源注入失败：%s", err)
+        return
+
+    hass.data[flag] = True
+    _LOGGER.info(
+        "凯迪仕门锁卡片已注册：%s/%s（若未生效请硬刷新浏览器）", FRONTEND_URL, CARD_JS
+    )
+
+
+async def _async_register_static_paths(hass: HomeAssistant, base: Path) -> None:
+    """注册静态路径，兼容新版（async_register_static_paths）与旧版 HA。"""
+    try:
+        from homeassistant.components.http import StaticPathConfig
+    except ImportError:
+        StaticPathConfig = None  # type: ignore[assignment]
+
+    if StaticPathConfig is not None:
         try:
             await hass.http.async_register_static_paths(
                 [
@@ -82,21 +106,18 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
                     StaticPathConfig(BRAND_URL, str(base / "brand"), True),
                 ]
             )
-        except AttributeError:  # 兼容旧版 HA
-            hass.http.register_static_path(
-                FRONTEND_URL, str(base / "frontend"), cache_headers=False
+            return
+        except AttributeError:
+            pass  # 旧版 HA，回退到 register_static_path
+        except TypeError as err:
+            _LOGGER.warning(
+                "async_register_static_paths 调用失败，回退旧接口：%s", err
             )
-            hass.http.register_static_path(
-                BRAND_URL, str(base / "brand"), cache_headers=True
-            )
-        frontend.add_extra_js_url(hass, f"{FRONTEND_URL}/{CARD_JS}")
-    except Exception:  # noqa: BLE001 - 前端注册失败不应影响集成加载
-        _LOGGER.warning(
-            "注册凯迪仕门锁卡片失败，可在仪表盘手动添加资源 %s/%s",
-            FRONTEND_URL,
-            CARD_JS,
-            exc_info=True,
-        )
-        return
-    hass.data[flag] = True
-    _LOGGER.debug("凯迪仕门锁卡片已注册：%s/%s", FRONTEND_URL, CARD_JS)
+
+    # 旧版接口
+    hass.http.register_static_path(
+        FRONTEND_URL, str(base / "frontend"), cache_headers=False
+    )
+    hass.http.register_static_path(
+        BRAND_URL, str(base / "brand"), cache_headers=True
+    )
