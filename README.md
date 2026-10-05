@@ -54,11 +54,22 @@
 
 ## 仪表盘卡片
 
-安装后自动注册 `kaadas-lock-card` 卡片。在仪表盘添加卡片时搜索「凯迪仕门锁卡片」，或：
+集成自带 `kaadas-lock-card` 卡片，**文件会自动同步到 `config/www/`**（无需手动复制）。
+
+- **浏览器**：自动加载，无需任何操作。
+- **手机 App**：需**添加一次资源**（只需做一次，之后更新集成会自动覆盖文件）：
+
+  | 字段 | 值 |
+  |---|---|
+  | URL | `/local/kaadas-lock-card.js` |
+  | 类型 | JavaScript 模块 |
+
+  在「设置 → 仪表盘 → 资源」点「添加资源」填入上表即可。
+
+之后在仪表盘添加卡片时搜索「凯迪仕门锁卡片」，或：
 
 ```yaml
 type: custom:kaadas-lock-card
-
 entity: lock.kaidas_xxx
 ```
 

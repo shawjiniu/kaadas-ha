@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import shutil
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -76,7 +77,20 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     except Exception as err:  # noqa: BLE001 - 静态路径失败不阻塞后续
         _LOGGER.error("凯迪仕静态路径注册失败：%s", err)
 
-    # 2) 注入额外 JS 模块
+    # 2) 自动同步卡片到 config/www/，供 /local/ 资源使用（手机 App 需走 /local/）
+    card_src = base / "frontend" / CARD_JS
+    www_dir = Path(hass.config.path("www"))
+    www_dst = www_dir / CARD_JS
+    try:
+        synced = await hass.async_add_executor_job(
+            _sync_card_file, www_dir, card_src, www_dst
+        )
+        if synced:
+            _LOGGER.info("凯迪仕卡片已同步到 /local/%s", CARD_JS)
+    except Exception as err:  # noqa: BLE001 - 同步失败不影响浏览器端
+        _LOGGER.error("同步凯迪仕卡片到 config/www 失败：%s", err)
+
+    # 3) 注入额外 JS 模块（浏览器端）
     try:
         from homeassistant.components import frontend
 
@@ -89,6 +103,15 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     _LOGGER.info(
         "凯迪仕门锁卡片已注册：%s/%s（若未生效请硬刷新浏览器）", FRONTEND_URL, CARD_JS
     )
+
+
+def _sync_card_file(www_dir: Path, src: Path, dst: Path) -> bool:
+    """把卡片 JS 同步到 config/www，返回是否有变化（供 executor 调用）。"""
+    www_dir.mkdir(parents=True, exist_ok=True)
+    if dst.exists() and dst.read_bytes() == src.read_bytes():
+        return False
+    shutil.copyfile(src, dst)
+    return True
 
 
 async def _async_register_static_paths(hass: HomeAssistant, base: Path) -> None:

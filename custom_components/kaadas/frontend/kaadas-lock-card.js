@@ -494,7 +494,11 @@ class KaadasLockCard extends HTMLElement {
   }
 }
 
-customElements.define("kaadas-lock-card", KaadasLockCard);
+try {
+  customElements.define("kaadas-lock-card", KaadasLockCard);
+} catch (err) {
+  // 卡片可能被 add_extra_js_url 与 /local/ 资源重复加载，重复定义时忽略
+}
 
 /* ------------------------------ 可视化编辑器 ------------------------------ */
 
@@ -561,7 +565,11 @@ class KaadasLockCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("kaadas-lock-card-editor", KaadasLockCardEditor);
+try {
+  customElements.define("kaadas-lock-card-editor", KaadasLockCardEditor);
+} catch (err) {
+  // 已在作用域注册表中定义过，忽略
+}
 
 /* ------------------------------- 注册到卡片库 ------------------------------ */
 
