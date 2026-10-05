@@ -1,0 +1,77 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "凯迪仕智能门锁",
+        "description": "填写凯迪仕微信小程序的 openId 与手机号（抓取方法见 README），集成会自动登录并续期 token。",
+        "data": {
+          "openid": "openId（存储键 openid）",
+          "phone": "手机号（11 位）",
+          "open_id_token": "openIdToken（存储键 login_token）"
+        }
+      },
+      "select_device": {
+        "title": "选择门锁",
+        "description": "账号下找到 {count} 个门锁，请选择要接入的门锁。",
+        "data": {
+          "device_choice": "门锁"
+        }
+      },
+      "reauth": {
+        "title": "重新认证",
+        "description": "凭证已失效，请重新填写 openId 与手机号。",
+        "data": {
+          "openid": "openId（存储键 openid）",
+          "phone": "手机号（11 位）",
+          "open_id_token": "openIdToken（存储键 login_token）"
+        }
+      }
+    },
+    "error": {
+      "auth": "登录失败，请检查 openId / 手机号。",
+      "cannot_connect": "接口请求失败，请检查凭证与网络。",
+      "invalid_device": "请选择列表中的门锁。"
+    },
+    "abort": {
+      "already_configured": "该门锁已经配置。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "凯迪仕门锁设置",
+        "description": "更新 openId / 手机号或切换门锁。",
+        "data": {
+          "openid": "openId（存储键 openid）",
+          "phone": "手机号（11 位）",
+          "open_id_token": "openIdToken（存储键 login_token）"
+        }
+      },
+      "select_device": {
+        "title": "选择门锁",
+        "description": "账号下找到 {count} 个门锁，请选择要接入的门锁。",
+        "data": {
+          "device_choice": "门锁"
+        }
+      }
+    },
+    "error": {
+      "auth": "登录失败，请检查 openId / 手机号。",
+      "cannot_connect": "接口请求失败，请检查凭证与网络。",
+      "invalid_device": "请选择列表中的门锁。"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": { "name": "电量" },
+      "wifi_rssi": { "name": "WiFi 信号" },
+      "firmware_version": { "name": "固件版本" },
+      "model_version": { "name": "物模型版本" },
+      "last_update_time": { "name": "数据更新时间" }
+    },
+    "binary_sensor": {
+      "connectivity": { "name": "在线状态" },
+      "defense_mode": { "name": "布防模式" }
+    }
+  }
+}

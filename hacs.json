@@ -1,0 +1,8 @@
+{
+  "name": "凯迪仕智能门锁 (Kaadas)",
+  "content_in_root": false,
+  "domains": ["lock", "binary_sensor", "sensor"],
+  "homeassistant": "2024.1.0",
+  "iot_class": "cloud_push",
+  "render_readme": true
+}

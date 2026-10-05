@@ -1,0 +1,12 @@
+{
+  "domain": "kaadas",
+  "name": "凯迪仕智能门锁",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/custom-components/kaadas",
+  "integration_type": "device",
+  "iot_class": "cloud_push",
+  "requirements": [],
+  "version": "0.1.0"
+}
