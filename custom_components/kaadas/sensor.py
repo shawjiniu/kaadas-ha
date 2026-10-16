@@ -152,6 +152,18 @@ SENSORS: tuple[KaadasSensorDescription, ...] = (
         icon="mdi:history",
     ),
     KaadasSensorDescription(
+        key="last_visit_time",
+        data_key="last_visit_time",
+        translation_key="last_visit_time",
+        icon="mdi:doorbell",
+    ),
+    KaadasSensorDescription(
+        key="last_alarm_time",
+        data_key="last_alarm_time",
+        translation_key="last_alarm_time",
+        icon="mdi:alert",
+    ),
+    KaadasSensorDescription(
         key="seven_day_operation_count",
         data_key="seven_day_operation_count",
         translation_key="seven_day_operation_count",
@@ -171,6 +183,27 @@ SENSORS: tuple[KaadasSensorDescription, ...] = (
         translation_key="seven_day_alarm_count",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:alert",
+    ),
+    KaadasSensorDescription(
+        key="today_operation_count",
+        data_key="today_operation_count",
+        translation_key="today_operation_count",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:door-open",
+    ),
+    KaadasSensorDescription(
+        key="today_doorbell_count",
+        data_key="today_doorbell_count",
+        translation_key="today_doorbell_count",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:bell-ring",
+    ),
+    KaadasSensorDescription(
+        key="open_count",
+        data_key="open_count",
+        translation_key="open_count",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:counter",
     ),
     KaadasSensorDescription(
         key="last_update_time",
@@ -219,16 +252,32 @@ class KaadasSensor(CoordinatorEntity[KaadasCoordinator], SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        if self.entity_description.key != "last_operation_time":
-            return None
         data = self.coordinator.data or {}
         attrs: dict[str, Any] = {}
-        records = data.get("operation_records")
-        if records:
-            attrs["操作记录"] = records[:20]
-        stats = data.get("seven_day_stats")
-        if stats:
-            attrs["近7天统计"] = stats
+        key = self.entity_description.key
+        if key == "last_operation_time":
+            records = data.get("operation_records")
+            if records:
+                attrs["操作记录"] = records[:20]
+            stats = data.get("seven_day_stats")
+            if stats:
+                attrs["近7天统计"] = stats
+        elif key == "last_visit_time":
+            records = data.get("visit_records")
+            if records:
+                attrs["访客记录"] = records[:20]
+        elif key == "last_alarm_time":
+            records = data.get("alarm_records")
+            if records:
+                attrs["预警记录"] = records[:20]
+        elif key == "today_operation_count":
+            day_stats = data.get("day_stats")
+            if day_stats:
+                attrs["当日统计"] = day_stats
+        elif key == "open_count":
+            compare = data.get("open_count_compare_day")
+            if compare is not None:
+                attrs["昨日对比"] = compare
         return attrs or None
 
     @property

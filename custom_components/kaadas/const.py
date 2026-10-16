@@ -53,3 +53,16 @@ PROP_SCREEN_ACTIVE_TIME = "p_screen_active_time"
 LOCK_STATUS_UNLOCKED = 1
 LOCK_STATUS_LOCKED = 2
 LOCK_STATUS_ABNORMAL = 3
+
+# 记录类别
+RECORD_OPERATION = "operation"  # 操作记录（开锁/上锁）
+RECORD_VISIT = "visit"          # 访客记录（门铃）
+RECORD_ALARM = "alarm"          # 预警信息
+
+# HA 事件（新记录到达时在事件总线上触发，供自动化使用）
+EVENT_OPERATION = "kaadas_operation"
+EVENT_DOORBELL = "kaadas_doorbell"
+EVENT_ALARM = "kaadas_alarm"
+
+# 记录接口兜底轮询间隔（秒）：门铃/预警不一定走 WS 推送，需低频轮询兜底
+RECORD_POLL_INTERVAL_SECONDS = 30

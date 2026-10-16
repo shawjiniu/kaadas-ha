@@ -19,6 +19,7 @@ PLATFORMS: list[Platform] = [
     Platform.LOCK,
     Platform.BINARY_SENSOR,
     Platform.SENSOR,
+    Platform.CAMERA,
 ]
 
 FRONTEND_URL = "/kaadas/frontend"

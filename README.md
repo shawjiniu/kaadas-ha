@@ -12,9 +12,13 @@
 
 - **状态开关**：布防模式、反锁/隐私、双重验证、屏幕、在线状态
 
-- **云端 WebSocket 实时推送**：开关锁 / 上下线 / 门铃等事件即时刷新（替代定时轮询）
+- **云端 WebSocket 实时推送 + 低频轮询兜底**：开关锁 / 上下线即时刷新，访客（门铃）/ 预警记录 30s 轮询兜底
 
-- **消息记录**：最近操作（操作人 + 操作内容）、近 7 天开锁/门铃/报警统计
+- **消息记录**：最近操作（操作人 + 操作内容）、最近访客（门铃）、最近预警、近 7 天与当日统计、累计开锁次数
+
+- **事件自动化**：新记录触发 `kaadas_operation` / `kaadas_doorbell` / `kaadas_alarm` 事件
+
+- **抓拍相机**：`camera` 实体显示最近一次门铃 / 预警抓拍图
 
 - **token 自动续期**：openId + 手机号自动重登录换新 token
 
@@ -51,6 +55,42 @@
 - `openIdToken`：存储键 `login_token`
 
 集成会自动登录换取 token/uid，并自动续期。
+
+## 事件与自动化
+
+集成在检测到**新**记录时，会在 HA 事件总线上触发以下事件（按记录 `id` 去重，首次启动只建基线、不重放历史事件）：
+
+| 事件 | 触发时机 | 事件数据 |
+|---|---|---|
+| `kaadas_doorbell` | 有人按门铃（访客记录） | `text`、`time`、`thumb_url`、`type`、`event_id`、`wifi_sn` |
+| `kaadas_alarm` | 预警（逗留/连续失败锁定等） | 同上 |
+| `kaadas_operation` | 开锁 / 上锁 | 额外含 `user_nickname`、`pwd_type`、`pwd_num`、`duress` |
+
+自动化示例：
+
+```yaml
+# 门锁预警推送
+- alias: 门锁预警通知
+  trigger:
+    - platform: event
+      event_type: kaadas_alarm
+  action:
+    - service: notify.notify
+      data:
+        message: "门锁预警：{{ trigger.event.data.text }}"
+
+# 有人按门铃 → 截图 / 执行任务
+- alias: 有人按门铃
+  trigger:
+    - platform: event
+      event_type: kaadas_doorbell
+  action:
+    - service: camera.snapshot
+      data:
+        filename: /config/www/doorbell.jpg
+```
+
+抓拍相机实体搜索「门铃抓拍」「预警抓拍」即可（`camera` 平台）。
 
 ## 仪表盘卡片
 

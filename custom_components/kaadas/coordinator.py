@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -16,6 +18,9 @@ from .const import (
     CONF_NICKNAME,
     CONF_WIFI_SN,
     DOMAIN,
+    EVENT_ALARM,
+    EVENT_DOORBELL,
+    EVENT_OPERATION,
     LOCK_STATUS_LOCKED,
     LOCK_STATUS_UNLOCKED,
     PROP_ALARM_TYPE,
@@ -39,6 +44,10 @@ from .const import (
     PROP_SCREEN_BACKLIGHT,
     PROP_SCREEN_ONOFF,
     PROP_WIFI_RSSI,
+    RECORD_ALARM,
+    RECORD_OPERATION,
+    RECORD_POLL_INTERVAL_SECONDS,
+    RECORD_VISIT,
     SERVICE_BASIC,
     SERVICE_LOCK,
 )
@@ -121,18 +130,31 @@ def device_info(entry: ConfigEntry, data: dict[str, Any]) -> dict[str, Any]:
 
 
 class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """数据协调器：由 WebSocket 实时推送驱动刷新，不自动轮询。"""
+    """数据协调器：WebSocket 实时推送 + 低频轮询兜底。
+
+    每次刷新会拉取操作/访客/预警三类记录，并按记录 ``id`` 去重后，
+    对新出现的记录在 HA 事件总线上触发 ``kaadas_*`` 事件。
+    """
 
     def __init__(
         self, hass: HomeAssistant, entry: ConfigEntry, token_manager: KaadasTokenManager
     ) -> None:
         self.entry = entry
         self.token_manager = token_manager
+        self._seen_store = Store(hass, 1, f"{DOMAIN}_records_{entry.entry_id}")
+        # 每类记录「已见的最新 id」水位线（Mongo ObjectId 十六进制，按时间单调）
+        self._seen_ids: dict[str, str] = {
+            RECORD_OPERATION: "",
+            RECORD_VISIT: "",
+            RECORD_ALARM: "",
+        }
+        self._seen_loaded = False
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=None,
+            # 门铃/预警不一定走 WS 推送，低频轮询兜底；WS 到达时仍会即时刷新
+            update_interval=timedelta(seconds=RECORD_POLL_INTERVAL_SECONDS),
             always_update=True,
         )
 
@@ -211,21 +233,102 @@ class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else screen.get("duration"),
         }
 
+    async def _load_seen(self) -> None:
+        """加载各类记录「已见最新 id」水位线（只读一次）。"""
+        if self._seen_loaded:
+            return
+        try:
+            saved = await self._seen_store.async_load() or {}
+        except Exception:  # noqa: BLE001 - 读取失败不影响主流程
+            saved = {}
+        if isinstance(saved, dict):
+            for category in (RECORD_OPERATION, RECORD_VISIT, RECORD_ALARM):
+                self._seen_ids[category] = str(saved.get(category) or "")
+        self._seen_loaded = True
+
+    async def _save_seen(self) -> None:
+        """持久化水位线。"""
+        try:
+            await self._seen_store.async_save(self._seen_ids)
+        except Exception as err:  # noqa: BLE001 - 保存失败仅告警
+            _LOGGER.warning("保存记录水位线失败：%s", err)
+
+    async def _fetch_record_list(self, api: Any, wifi_sn: str, category: str) -> list[dict[str, Any]]:
+        """拉取某一类记录首页（最新 10 条），失败返回空列表。"""
+        records: list[dict[str, Any]] = []
+        try:
+            if category == RECORD_VISIT:
+                result = await api.async_get_visit_records(wifi_sn)
+            elif category == RECORD_ALARM:
+                result = await api.async_get_alarm_records(wifi_sn)
+            else:
+                result = await api.async_get_operation_records(wifi_sn)
+            if isinstance(result, dict):
+                payload = result.get("data")
+                if isinstance(payload, list):
+                    records = [item for item in payload if isinstance(item, dict)]
+        except (KaadasApiError, KaadasAuthError) as err:
+            _LOGGER.warning("读取%s记录失败：%s", category, err)
+        return records
+
+    def _detect_new_records(self, category: str, records: list[dict[str, Any]]) -> None:
+        """按 id 水位线检测新记录并触发事件；首轮只建基线不触发。"""
+        if not records:
+            return
+        last_seen = self._seen_ids.get(category, "")
+        ids = [str(record.get("id") or "") for record in records]
+        current_max = max(ids) if ids else ""
+        new_records: list[dict[str, Any]] = []
+        if last_seen and current_max > last_seen:
+            new_records = [
+                record
+                for record in records
+                if str(record.get("id") or "") > last_seen
+            ]
+        if current_max > last_seen:
+            self._seen_ids[category] = current_max
+        # 从旧到新触发，保证事件顺序
+        for record in reversed(new_records):
+            self._fire_record_event(category, record)
+
+    def _fire_record_event(self, category: str, record: dict[str, Any]) -> None:
+        """在 HA 事件总线上触发一次记录事件。"""
+        event_type = {
+            RECORD_OPERATION: EVENT_OPERATION,
+            RECORD_VISIT: EVENT_DOORBELL,
+            RECORD_ALARM: EVENT_ALARM,
+        }.get(category)
+        if not event_type:
+            return
+        self.hass.bus.async_fire(
+            event_type,
+            {
+                "wifi_sn": str(record.get("wifiSN") or ""),
+                "time": record.get("time"),
+                "text": str(record.get("textContent") or ""),
+                "type": record.get("type"),
+                "event_id": str(record.get("eventId") or ""),
+                "thumb_url": str(record.get("thumbUrl") or ""),
+                "pwd_type": record.get("pwdType"),
+                "pwd_num": record.get("pwdNum"),
+                "user_nickname": str(record.get("userNickname") or ""),
+                "duress": bool(record.get("duress") or False),
+            },
+        )
+
     async def _fetch_records_and_stats(
         self, api: Any, wifi_sn: str, data: dict[str, Any]
     ) -> None:
-        """读取操作记录与近 7 天统计（非致命，失败仅告警）。"""
-        operation_records: list[dict[str, Any]] = []
-        try:
-            result = await api.async_get_operation_records(wifi_sn)
-            if isinstance(result, dict):
-                records = result.get("data")
-                if isinstance(records, list):
-                    operation_records = [
-                        item for item in records if isinstance(item, dict)
-                    ]
-        except (KaadasApiError, KaadasAuthError) as err:
-            _LOGGER.warning("读取操作记录失败：%s", err)
+        """读取操作/访客/预警记录与近 7 天统计（非致命，失败仅告警）。"""
+        operation_records = await self._fetch_record_list(api, wifi_sn, RECORD_OPERATION)
+        visit_records = await self._fetch_record_list(api, wifi_sn, RECORD_VISIT)
+        alarm_records = await self._fetch_record_list(api, wifi_sn, RECORD_ALARM)
+
+        # 去重检测并触发事件
+        self._detect_new_records(RECORD_OPERATION, operation_records)
+        self._detect_new_records(RECORD_VISIT, visit_records)
+        self._detect_new_records(RECORD_ALARM, alarm_records)
+        await self._save_seen()
 
         seven_day_stats: list[dict[str, Any]] = []
         try:
@@ -235,8 +338,31 @@ class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (KaadasApiError, KaadasAuthError) as err:
             _LOGGER.warning("读取近 7 天统计失败：%s", err)
 
+        day_stats: dict[str, Any] = {}
+        try:
+            day = await api.async_get_day_statistics(wifi_sn)
+            if isinstance(day, dict):
+                day_stats = day
+        except (KaadasApiError, KaadasAuthError) as err:
+            _LOGGER.warning("读取当日统计失败：%s", err)
+
+        open_count: dict[str, Any] = {}
+        try:
+            count = await api.async_get_open_count(wifi_sn)
+            if isinstance(count, dict):
+                open_count = count
+        except (KaadasApiError, KaadasAuthError) as err:
+            _LOGGER.warning("读取开锁次数失败：%s", err)
+
         data["operation_records"] = operation_records
+        data["visit_records"] = visit_records
+        data["alarm_records"] = alarm_records
         data["seven_day_stats"] = seven_day_stats
+        data["day_stats"] = day_stats
+        data["today_operation_count"] = day_stats.get("allCount")
+        data["today_doorbell_count"] = day_stats.get("doorbellCount")
+        data["open_count"] = open_count.get("openCount")
+        data["open_count_compare_day"] = open_count.get("compareDay")
         data["seven_day_operation_count"] = sum(
             _to_int(item.get("operationCount")) for item in seven_day_stats
         )
@@ -250,8 +376,13 @@ class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data["last_operation_time"] = self._format_ts(
                 operation_records[0].get("time")
             )
+        if visit_records:
+            data["last_visit_time"] = self._format_ts(visit_records[0].get("time"))
+        if alarm_records:
+            data["last_alarm_time"] = self._format_ts(alarm_records[0].get("time"))
 
     async def _async_update_data(self) -> dict[str, Any]:
+        await self._load_seen()
         try:
             devices = await self.token_manager.async_get_devices()
         except KaadasAuthError as err:

@@ -178,3 +178,41 @@ class KaadasApi:
             f"{BASE_URL}/wifi/statistics/sevenDays",
             {"uid": self.uid, "wifiSN": wifi_sn},
         )
+
+    async def async_get_visit_records(
+        self, wifi_sn: str, page: int = 1, max_id: str = ""
+    ) -> Any:
+        """分页获取访客记录（门铃）。"""
+        return await self._request(
+            "post",
+            f"{BASE_URL}/record/operation/visit",
+            {"wifiSN": wifi_sn, "page": page, "maxId": max_id},
+            headers={"ver": "1"},
+        )
+
+    async def async_get_alarm_records(
+        self, wifi_sn: str, page: int = 1, max_id: str = ""
+    ) -> Any:
+        """分页获取预警信息。"""
+        return await self._request(
+            "post",
+            f"{BASE_URL}/record/operation/alarm",
+            {"wifiSN": wifi_sn, "page": page, "maxId": max_id},
+            headers={"ver": "1"},
+        )
+
+    async def async_get_day_statistics(self, wifi_sn: str) -> Any:
+        """当日按开锁方式分类的统计。"""
+        return await self._request(
+            "post",
+            f"{BASE_URL}/wifi/statistics/day",
+            {"uid": self.uid, "wifiSN": wifi_sn},
+        )
+
+    async def async_get_open_count(self, wifi_sn: str) -> Any:
+        """开锁总次数与对比日数据。"""
+        return await self._request(
+            "post",
+            f"{BASE_URL}/wifi/operation/openCount",
+            {"wifiSN": wifi_sn, "uid": self.uid},
+        )
