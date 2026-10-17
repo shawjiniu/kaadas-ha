@@ -12,7 +12,7 @@
  *   数据更新时间（最底端）
  */
 
-const CARD_VERSION = "0.4.2";
+const CARD_VERSION = "0.4.3";
 const BRAND_LOGO = "/kaadas/brand/icon.png";
 
 const LOG = (...args) => console.log("%c[kaadas-lock-card]", "color:#3F8CFF", ...args);
@@ -755,7 +755,16 @@ class KaadasLockCard extends HTMLElement {
 try {
   customElements.define("kaadas-lock-card", KaadasLockCard);
 } catch (err) {
-  // 卡片可能被 add_extra_js_url 与 /local/ 资源重复加载，重复定义时忽略
+  // 已被另一份副本抢先定义（add_extra_js_url 与 /local/ 双加载）。
+  // 若抢占的是旧版本，则说明旧文件先加载，新版本的修复不会生效。
+  const existing = customElements.get("kaadas-lock-card");
+  if (existing && existing !== KaadasLockCard) {
+    console.warn(
+      "[kaadas-lock-card] 检测到另一份旧版卡片已抢先注册元素，当前 v" +
+        CARD_VERSION +
+        " 未生效。请更新 config/www/kaadas-lock-card.js（重启 Home Assistant 会自动同步）并清除 App/浏览器缓存。"
+    );
+  }
 }
 
 /* ------------------------------ 可视化编辑器 ------------------------------ */
@@ -827,6 +836,12 @@ try {
   customElements.define("kaadas-lock-card-editor", KaadasLockCardEditor);
 } catch (err) {
   // 已在作用域注册表中定义过，忽略
+  const existing = customElements.get("kaadas-lock-card-editor");
+  if (existing && existing !== KaadasLockCardEditor) {
+    console.warn(
+      "[kaadas-lock-card] 检测到另一份旧版卡片编辑器已抢先注册，当前 v" + CARD_VERSION + " 未生效。"
+    );
+  }
 }
 
 /* ------------------------------- 注册到卡片库 ------------------------------ */
