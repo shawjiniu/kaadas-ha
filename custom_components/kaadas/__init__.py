@@ -27,11 +27,16 @@ PLATFORMS: list[Platform] = [
 
 FRONTEND_URL = "/kaadas/frontend"
 BRAND_URL = "/kaadas/brand"
-CARD_JS = "kaadas-lock-card.js"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """注册手动刷新服务（手动轮询模式下手动拉取记录）。"""
+    """注册前端静态路径与手动刷新服务。"""
+    # 前端静态路径（卡片 JS + 品牌图标）：在 async_setup 阶段注册（与
+    # chinese_calendar 一致），保证手机 App 通过 /kaadas/frontend/ 也能加载卡片。
+    try:
+        await _async_register_static_paths(hass, Path(__file__).parent)
+    except Exception as err:  # noqa: BLE001 - 静态路径失败不阻塞其它功能
+        _LOGGER.error("凯迪仕静态路径注册失败：%s", err)
 
     async def _refresh(call) -> None:
         entry_id = call.data.get("entry_id")
@@ -54,8 +59,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    await _async_register_frontend(hass)
-
     token_manager = KaadasTokenManager(hass, entry)
     await token_manager.async_load()
     await token_manager.async_note_token_set()
@@ -88,41 +91,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
-
-
-async def _async_register_frontend(hass: HomeAssistant) -> None:
-    """把随集成打包的 Lovelace 卡片注册为前端资源。
-
-    卡片通过集成自己的静态路径 /kaadas/frontend/ 提供（cache_headers=False，不缓存），
-    同时注入 extra_js_url 供浏览器自动加载；手机 App 在「资源」里手动添加
-    /kaadas/frontend/kaadas-lock-card.js 即可（与浏览器共用同一 URL，不会重复加载）。
-    """
-    base = Path(__file__).parent
-
-    # 静态路径与 extra_js_url 只注册一次
-    flag = f"{DOMAIN}_frontend_registered"
-    if hass.data.get(flag):
-        return
-
-    # 1) 注册静态路径（卡片 JS + 品牌图标）
-    try:
-        await _async_register_static_paths(hass, base)
-    except Exception as err:  # noqa: BLE001 - 静态路径失败不阻塞后续
-        _LOGGER.error("凯迪仕静态路径注册失败：%s", err)
-
-    # 2) 注入额外 JS 模块（浏览器端自动加载）
-    try:
-        from homeassistant.components import frontend
-
-        frontend.add_extra_js_url(hass, f"{FRONTEND_URL}/{CARD_JS}")
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.error("凯迪仕卡片资源注入失败：%s", err)
-        return
-
-    hass.data[flag] = True
-    _LOGGER.info(
-        "凯迪仕门锁卡片已注册：%s/%s（若未生效请硬刷新浏览器）", FRONTEND_URL, CARD_JS
-    )
 
 
 async def _async_register_static_paths(hass: HomeAssistant, base: Path) -> None:

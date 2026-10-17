@@ -755,14 +755,14 @@ class KaadasLockCard extends HTMLElement {
 try {
   customElements.define("kaadas-lock-card", KaadasLockCard);
 } catch (err) {
-  // 已被另一份副本抢先定义（add_extra_js_url 与 /local/ 双加载）。
+  // 已被另一份副本抢先定义（例如同时残留了旧的 /local/ 资源）。
   // 若抢占的是旧版本，则说明旧文件先加载，新版本的修复不会生效。
   const existing = customElements.get("kaadas-lock-card");
   if (existing && existing !== KaadasLockCard) {
     console.warn(
       "[kaadas-lock-card] 检测到另一份旧版卡片已抢先注册元素，当前 v" +
         CARD_VERSION +
-        " 未生效。请更新 config/www/kaadas-lock-card.js（重启 Home Assistant 会自动同步）并清除 App/浏览器缓存。"
+        " 未生效。请删除仪表盘里其它旧版卡片资源（如 /local/kaadas-lock-card.js），只保留 /kaadas/frontend/kaadas-lock-card.js，并清除 App/浏览器缓存。"
     );
   }
 }

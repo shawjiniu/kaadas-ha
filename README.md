@@ -130,18 +130,14 @@ action:
 
 ## 仪表盘卡片
 
-集成自带 `kaadas-lock-card` 卡片，通过集成自己的静态路径 `/kaadas/frontend/` 提供（**不缓存**，无需同步到 `config/www/`）。
+集成自带 `kaadas-lock-card` 卡片，通过集成自己的静态路径 `/kaadas/frontend/` 提供（不缓存，无需同步到 `config/www/`）。
 
-- **浏览器**：自动加载，无需任何操作。
-- **手机 App**：需**添加一次资源**（只需做一次，之后更新集成无需再动）：
+在「设置 → 仪表盘 → 资源」点「添加资源」填入下表即可（**只需添加一次**，对所有客户端生效，包括浏览器和手机 App）：
 
-  | 字段 | 值 |
-  |---|---|
-  | URL | `/kaadas/frontend/kaadas-lock-card.js` |
-  | 类型 | JavaScript 模块 |
-
-  在「设置 → 仪表盘 → 资源」点「添加资源」填入上表即可。
-  > 不要使用 `/local/kaadas-lock-card.js`——`/local/` 会缓存，容易加载到旧版本。
+| 字段 | 值 |
+|---|---|
+| URL | `/kaadas/frontend/kaadas-lock-card.js` |
+| 类型 | JavaScript 模块 |
 
 之后在仪表盘添加卡片时搜索「凯迪仕门锁卡片」，或：
 
