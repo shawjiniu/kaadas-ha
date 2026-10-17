@@ -1,0 +1,18 @@
+{
+  "refresh": {
+    "name": "手动刷新",
+    "description": "立即拉取凯迪仕门锁的最新状态与操作/访客/预警记录（手动轮询模式下手动触发）。",
+    "fields": {
+      "entry_id": {
+        "name": "配置条目 ID",
+        "description": "要刷新的凯迪仕配置条目；留空则刷新全部凯迪仕条目。",
+        "example": "c0ffee...",
+        "selector": {
+          "config_entry": {
+            "integration": "kaadas"
+          }
+        }
+      }
+    }
+  }
+}

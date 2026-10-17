@@ -7,11 +7,12 @@
  *   │   锁状态       │ │   电量(横向条) │
  *   └───────────────┘ └───────────────┘
  *   [布防模式][逗留检测][反锁/隐私][在线状态]   （可配置隐藏）
- *   消息记录（滚动，可见 5 条，内容更多）       （可配置隐藏）
+ *   消息/访客/预警记录（tab 切换，滚动可见 5 条）  （可配置隐藏）
+ *   访客/预警记录带抓拍图，点击弹窗预览            （可配置隐藏）
  *   数据更新时间（最底端）
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.4.2";
 const BRAND_LOGO = "/kaadas/brand/icon.png";
 
 const LOG = (...args) => console.log("%c[kaadas-lock-card]", "color:#3F8CFF", ...args);
@@ -79,6 +80,10 @@ function formatPwdNum(pwdNum) {
 
 function recordMessage(record) {
   if (!record || typeof record !== "object") return String(record ?? "—");
+  // 服务端已生成中文文案（textContent），优先使用（访客/预警记录仅有此字段）
+  const textContent = String(getField(record, "textContent", "textTitle") ?? "").trim();
+  if (textContent) return textContent;
+
   const operator = String(getField(record, "userNickname", "userName", "name", "user") ?? "").trim();
   const type = Number(getField(record, "type"));
   const pwdType = Number(getField(record, "pwdType", "keyType", "functionId"));
@@ -130,6 +135,9 @@ class KaadasLockCard extends HTMLElement {
     this._config = {};
     this._hass = null;
     this._rendered = false;
+    this._tab = "operation";
+    this._photo = null;
+    this._bound = false;
   }
 
   static getStubConfig(hass) {
@@ -165,10 +173,16 @@ class KaadasLockCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    const sig = this._signature();
+    let sig;
+    try {
+      sig = this._signature();
+    } catch (err) {
+      console.error("[kaadas-lock-card] 签名计算失败：", err);
+      return;
+    }
     if (sig === this._sig) return;
     this._sig = sig;
-    this._render();
+    this._safeRender();
   }
 
   getCardSize() {
@@ -183,6 +197,8 @@ class KaadasLockCard extends HTMLElement {
       r.byKey.battery,
       r.byKey.last_update_time,
       r.byKey.last_operation_time,
+      r.byKey.last_visit_time,
+      r.byKey.last_alarm_time,
       r.byKey.defense_mode,
       r.byKey.linger_detection,
       r.byKey.locked_inside_status,
@@ -222,6 +238,8 @@ class KaadasLockCard extends HTMLElement {
     if (cfg.status_entity) out.byKey.lock_status = cfg.status_entity;
     if (cfg.battery_entity) out.byKey.battery = cfg.battery_entity;
     if (cfg.records_entity) out.byKey.last_operation_time = cfg.records_entity;
+    if (cfg.visit_records_entity) out.byKey.last_visit_time = cfg.visit_records_entity;
+    if (cfg.alarm_records_entity) out.byKey.last_alarm_time = cfg.alarm_records_entity;
     if (cfg.defense_entity) out.byKey.defense_mode = cfg.defense_entity;
     if (cfg.linger_entity) out.byKey.linger_detection = cfg.linger_entity;
     if (cfg.inside_entity) out.byKey.locked_inside_status = cfg.inside_entity;
@@ -246,6 +264,8 @@ class KaadasLockCard extends HTMLElement {
     const batteryState = this._state(r.byKey.battery);
     const updateState = this._state(r.byKey.last_update_time);
     const recordsState = this._state(r.byKey.last_operation_time);
+    const visitRecordsState = this._state(r.byKey.last_visit_time);
+    const alarmRecordsState = this._state(r.byKey.last_alarm_time);
     const defenseState = this._state(r.byKey.defense_mode);
     const lingerState = this._state(r.byKey.linger_detection);
     const insideState = this._state(r.byKey.locked_inside_status);
@@ -281,9 +301,32 @@ class KaadasLockCard extends HTMLElement {
     ];
 
     const updateTime = updateState?.state && updateState.state !== "unknown" ? updateState.state : "—";
-    const records = Array.isArray(recordsState?.attributes?.["操作记录"])
+    const operationRecords = Array.isArray(recordsState?.attributes?.["操作记录"])
       ? recordsState.attributes["操作记录"]
       : [];
+    const visitRecords = Array.isArray(visitRecordsState?.attributes?.["访客记录"])
+      ? visitRecordsState.attributes["访客记录"]
+      : [];
+    const alarmRecords = Array.isArray(alarmRecordsState?.attributes?.["预警记录"])
+      ? alarmRecordsState.attributes["预警记录"]
+      : [];
+    const tabs = [
+      { key: "operation", label: "消息记录", records: operationRecords },
+      { key: "visit", label: "访客记录", records: visitRecords },
+      { key: "alarm", label: "预警记录", records: alarmRecords },
+    ];
+    const activeTab = tabs.find((t) => t.key === this._tab) || tabs[0];
+    const records = activeTab.records;
+
+    const photoModal = this._photo
+      ? `<div class="photo-modal">
+           <div class="photo-backdrop" data-close="1"></div>
+           <div class="photo-box">
+             <img src="${this._esc(this._photo)}" alt="抓拍图" />
+             <button type="button" class="photo-close" data-close="1" aria-label="关闭"><ha-icon icon="mdi:close"></ha-icon></button>
+           </div>
+         </div>`
+      : "";
 
     const html = `
       <ha-card>
@@ -296,6 +339,9 @@ class KaadasLockCard extends HTMLElement {
               <div class="name">${this._esc(r.name)}</div>
               <div class="model">${this._esc(r.model || "—")}</div>
             </div>
+            <button type="button" class="refresh-btn" data-refresh="1" aria-label="手动刷新" title="手动刷新">
+              <ha-icon icon="mdi:refresh"></ha-icon>
+            </button>
           </div>
 
           <div class="stats">
@@ -341,19 +387,27 @@ class KaadasLockCard extends HTMLElement {
           ${
             cfg.show_records
               ? `<div class="records">
-                   <div class="records-title">消息记录</div>
+                   <div class="records-tabs">
+                     ${tabs
+                       .map(
+                         (t) => `<button type="button" class="record-tab ${t.key === activeTab.key ? "active" : ""}" data-tab="${t.key}">${t.label}</button>`
+                       )
+                       .join("")}
+                   </div>
                    <div class="records-list">
                      ${
                        records.length
                          ? records
                              .slice(0, cfg.records_limit)
-                             .map(
-                               (rec) => `
-                         <div class="record">
+                             .map((rec) => {
+                               const thumb = String(getField(rec, "thumbUrl") ?? "").trim();
+                               return `
+                         <div class="record ${thumb ? "has-photo" : ""}" ${thumb ? `data-thumb="${this._esc(thumb)}"` : ""}>
                            <span class="record-time">${this._esc(fmtTime(rec?.time))}</span>
                            <span class="record-msg">${this._esc(recordMessage(rec))}</span>
-                         </div>`
-                             )
+                           ${thumb ? `<ha-icon class="record-photo-icon" icon="mdi:image-outline"></ha-icon>` : ""}
+                         </div>`;
+                             })
                              .join("")
                          : `<div class="records-empty">暂无记录</div>`
                      }
@@ -368,6 +422,7 @@ class KaadasLockCard extends HTMLElement {
               : ""
           }
         </div>
+        ${photoModal}
       </ha-card>
     `;
 
@@ -378,6 +433,144 @@ class KaadasLockCard extends HTMLElement {
       const card = this.shadowRoot.querySelector("ha-card");
       if (card) card.outerHTML = html.trim();
       else this.shadowRoot.innerHTML = `<style>${KaadasLockCard.styles}</style>${html}`;
+    }
+    this._bindInteractions();
+  }
+
+  _safeRender() {
+    try {
+      this._render();
+    } catch (err) {
+      console.error("[kaadas-lock-card] 渲染失败：", err);
+    }
+  }
+
+  _bindInteractions() {
+    // 事件委托：在 shadowRoot 上只绑定一次。
+    // pointerup/touchend 优先处理（部分 WebView 的 click 不稳定），click 作为兜底；
+    // 仅用「最近一次 pointer/touch 点击时间」去重紧随其后的 click，避免同一次 tap 重复触发，
+    // 同时不阻止快速连续切换不同 tab。
+    if (this._bound) return;
+    this._bound = true;
+
+    let downX = 0;
+    let downY = 0;
+    let downSet = false;
+    let lastPointerTapAt = 0;
+
+    const resolveEl = (ev, sel) => {
+      // 优先 composedPath（shadow DOM 内最可靠），失败时退回 target.closest
+      if (typeof ev.composedPath === "function") {
+        for (const n of ev.composedPath()) {
+          if (n && n.nodeType === 1 && typeof n.matches === "function" && n.matches(sel)) {
+            return n;
+          }
+        }
+      }
+      const t = ev.target;
+      if (t && typeof t.closest === "function") {
+        const el = t.closest(sel);
+        if (el) return el;
+      }
+      return null;
+    };
+
+    const handleTap = (ev) => {
+      const tabEl = resolveEl(ev, ".record-tab");
+      if (tabEl) {
+        const tab = tabEl.dataset.tab;
+        LOG("tab click", tab, "当前:", this._tab);
+        if (tab && tab !== this._tab) {
+          this._tab = tab;
+          this._safeRender();
+        }
+        return true;
+      }
+
+      if (resolveEl(ev, "[data-refresh]")) {
+        this._refresh();
+        return true;
+      }
+
+      const recordEl = resolveEl(ev, ".record.has-photo");
+      if (recordEl && recordEl.dataset.thumb) {
+        this._photo = recordEl.dataset.thumb;
+        this._safeRender();
+        return true;
+      }
+
+      const closeEl = resolveEl(ev, "[data-close]");
+      if (closeEl && this._photo) {
+        this._photo = null;
+        this._safeRender();
+        return true;
+      }
+      return false;
+    };
+
+    const isDrag = (x, y) => Math.abs(x - downX) > 12 || Math.abs(y - downY) > 12;
+
+    // pointer 事件（位移超 12px 视为滚动；cancel 时重置）
+    this.shadowRoot.addEventListener("pointerdown", (ev) => {
+      downX = ev.clientX;
+      downY = ev.clientY;
+      downSet = true;
+    });
+    this.shadowRoot.addEventListener("pointerup", (ev) => {
+      if (!downSet) return;
+      downSet = false;
+      if (isDrag(ev.clientX, ev.clientY)) return;
+      if (handleTap(ev)) lastPointerTapAt = Date.now();
+    });
+    this.shadowRoot.addEventListener("pointercancel", () => {
+      downSet = false;
+    });
+
+    // 仅支持触摸事件的老 WebView 兜底
+    this.shadowRoot.addEventListener(
+      "touchstart",
+      (ev) => {
+        const t = ev.changedTouches && ev.changedTouches[0];
+        if (!t) return;
+        downX = t.clientX;
+        downY = t.clientY;
+        downSet = true;
+      },
+      { passive: true }
+    );
+    this.shadowRoot.addEventListener("touchend", (ev) => {
+      if (!downSet) return;
+      downSet = false;
+      const t = ev.changedTouches && ev.changedTouches[0];
+      if (!t) return;
+      if (isDrag(t.clientX, t.clientY)) return;
+      if (handleTap(ev)) lastPointerTapAt = Date.now();
+    });
+    this.shadowRoot.addEventListener("touchcancel", () => {
+      downSet = false;
+    });
+
+    // click 兜底：若 pointer/touch 刚处理过同一次 tap 则跳过
+    this.shadowRoot.addEventListener("click", (ev) => {
+      if (Date.now() - lastPointerTapAt < 400) return;
+      handleTap(ev);
+    });
+  }
+
+  _refresh() {
+    const hass = this._hass;
+    if (!hass?.callService) return;
+    const reg = hass.entities?.[this._config.entity];
+    const entryId = reg?.config_entry_id;
+    hass.callService("kaadas", "refresh", entryId ? { entry_id: entryId } : {});
+    // 反馈：图标短暂旋转
+    const icon = this.shadowRoot.querySelector("[data-refresh] ha-icon");
+    if (icon) {
+      icon.classList.add("spinning");
+      setTimeout(() => {
+        const i = this.shadowRoot.querySelector("[data-refresh] ha-icon");
+        if (i) i.classList.remove("spinning");
+      }, 1200);
     }
   }
 
@@ -417,6 +610,22 @@ class KaadasLockCard extends HTMLElement {
       .model {
         font-size: 0.78rem; color: var(--secondary-text-color); margin-top: 1px;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .refresh-btn {
+        border: none; background: transparent; cursor: pointer;
+        width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--secondary-text-color);
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-user-select: none; user-select: none;
+      }
+      .refresh-btn:hover { color: var(--primary-text-color); background: var(--secondary-background-color, #f2f4f7); }
+      .refresh-btn ha-icon { --mdc-icon-size: 20px; }
+      .refresh-btn ha-icon.spinning { animation: kaadas-spin 1s linear infinite; }
+      @keyframes kaadas-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
       }
 
       /* 锁状态 + 电量（高度约为原来的 2/3） */
@@ -462,9 +671,29 @@ class KaadasLockCard extends HTMLElement {
       .chip-label { font-size: 0.72rem; color: var(--secondary-text-color); white-space: nowrap; }
       .chip-value { font-size: 0.85rem; font-weight: 600; color: var(--primary-text-color); white-space: nowrap; }
 
-      /* 消息记录：滚动，可见约 5 条，内容更多 */
+      /* 消息/访客/预警记录：tab 切换 + 滚动列表 */
       .records { display: flex; flex-direction: column; gap: 6px; }
-      .records-title { font-size: 0.85rem; font-weight: 600; color: var(--primary-text-color); }
+      .records-tabs {
+        display: flex; border-bottom: 1px solid var(--divider-color, #e0e0e0);
+      }
+      .record-tab {
+        border: none; background: transparent; cursor: pointer;
+        padding: 6px 10px; font-size: 0.82rem; font-family: inherit;
+        color: var(--secondary-text-color);
+        border-bottom: 2px solid transparent; margin-bottom: -1px;
+        transition: color 0.2s, border-color 0.2s;
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-user-select: none; user-select: none;
+        margin-right: 2px;
+      }
+      .record-tab:last-child { margin-right: 0; }
+      .record-tab.active {
+        color: #3F8CFF; border-bottom-color: #3F8CFF; font-weight: 600;
+      }
+      .record-tab:hover { color: var(--primary-text-color); }
+      /* 移动端悬停是粘性的：active 必须始终压过 hover，否则选中项会显示成白色 */
+      .record-tab.active:hover { color: #3F8CFF; }
       .records-list { display: flex; flex-direction: column; max-height: 150px; overflow-y: auto; }
       .record {
         display: flex; gap: 10px; padding: 6px 0; font-size: 0.82rem;
@@ -480,6 +709,35 @@ class KaadasLockCard extends HTMLElement {
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
       .records-empty { font-size: 0.82rem; color: var(--secondary-text-color); padding: 6px 0; }
+      .record.has-photo { cursor: pointer; border-radius: 4px; touch-action: manipulation; }
+      .record.has-photo:hover { background: var(--secondary-background-color, #f2f4f7); }
+      .record-photo-icon { --mdc-icon-size: 16px; color: var(--secondary-text-color); flex: 0 0 auto; align-self: center; }
+
+      /* 抓拍图弹窗 */
+      .photo-modal {
+        position: fixed; inset: 0; z-index: 1000;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .photo-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); }
+      .photo-box {
+        position: relative;
+        width: min(92vw, 92vh); height: min(92vw, 92vh);
+        background: #000; border-radius: 12px; overflow: hidden;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+        display: flex; align-items: center; justify-content: center;
+      }
+      .photo-box img {
+        display: block; max-width: 100%; max-height: 100%;
+        transform: rotate(90deg);
+      }
+      .photo-close {
+        position: absolute; top: 8px; right: 8px;
+        width: 32px; height: 32px; border-radius: 50%; border: none;
+        background: rgba(0, 0, 0, 0.55); color: #fff; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        touch-action: none;
+      }
+      .photo-close ha-icon { --mdc-icon-size: 20px; }
 
       /* 数据更新时间：最底端 */
       .updated {
@@ -578,7 +836,7 @@ if (!window.customCards.some((c) => c.type === "kaadas-lock-card")) {
   window.customCards.push({
     type: "kaadas-lock-card",
     name: "凯迪仕门锁卡片",
-    description: "凯迪仕智能门锁状态卡片（设备名/型号、锁状态、电量、消息记录）",
+    description: "凯迪仕智能门锁状态卡片（锁状态、电量、消息/访客/预警记录 tab 切换，抓拍图点击预览）",
     preview: true,
     documentationURL: "https://github.com/custom-components/kaadas",
   });

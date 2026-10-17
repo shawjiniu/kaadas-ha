@@ -40,11 +40,13 @@
     "step": {
       "init": {
         "title": "凯迪仕门锁设置",
-        "description": "更新 openId / 手机号或切换门锁。",
+        "description": "更新 openId / 手机号、轮询方式或切换门锁。",
         "data": {
           "openid": "openId（存储键 openid）",
           "phone": "手机号（11 位）",
-          "open_id_token": "openIdToken（存储键 login_token）"
+          "open_id_token": "openIdToken（存储键 login_token）",
+          "polling_mode": "轮询方式",
+          "polling_interval": "轮询间隔（秒）"
         }
       },
       "select_device": {
