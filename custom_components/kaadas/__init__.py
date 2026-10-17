@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-import shutil
 
 import voluptuous as vol
 
@@ -92,21 +91,13 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 
 async def _async_register_frontend(hass: HomeAssistant) -> None:
-    """把随集成打包的 Lovelace 卡片注册为额外前端资源。"""
-    base = Path(__file__).parent
+    """把随集成打包的 Lovelace 卡片注册为前端资源。
 
-    # 每次都同步卡片到 config/www/，确保 /local/ 始终最新（手机 App 走 /local/）
-    card_src = base / "frontend" / CARD_JS
-    www_dir = Path(hass.config.path("www"))
-    www_dst = www_dir / CARD_JS
-    try:
-        synced = await hass.async_add_executor_job(
-            _sync_card_file, www_dir, card_src, www_dst
-        )
-        if synced:
-            _LOGGER.info("凯迪仕卡片已同步到 /local/%s", CARD_JS)
-    except Exception as err:  # noqa: BLE001 - 同步失败不影响浏览器端
-        _LOGGER.error("同步凯迪仕卡片到 config/www 失败：%s", err)
+    卡片通过集成自己的静态路径 /kaadas/frontend/ 提供（cache_headers=False，不缓存），
+    同时注入 extra_js_url 供浏览器自动加载；手机 App 在「资源」里手动添加
+    /kaadas/frontend/kaadas-lock-card.js 即可（与浏览器共用同一 URL，不会重复加载）。
+    """
+    base = Path(__file__).parent
 
     # 静态路径与 extra_js_url 只注册一次
     flag = f"{DOMAIN}_frontend_registered"
@@ -119,7 +110,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     except Exception as err:  # noqa: BLE001 - 静态路径失败不阻塞后续
         _LOGGER.error("凯迪仕静态路径注册失败：%s", err)
 
-    # 2) 注入额外 JS 模块（浏览器端）
+    # 2) 注入额外 JS 模块（浏览器端自动加载）
     try:
         from homeassistant.components import frontend
 
@@ -132,15 +123,6 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     _LOGGER.info(
         "凯迪仕门锁卡片已注册：%s/%s（若未生效请硬刷新浏览器）", FRONTEND_URL, CARD_JS
     )
-
-
-def _sync_card_file(www_dir: Path, src: Path, dst: Path) -> bool:
-    """把卡片 JS 同步到 config/www，返回是否有变化（供 executor 调用）。"""
-    www_dir.mkdir(parents=True, exist_ok=True)
-    if dst.exists() and dst.read_bytes() == src.read_bytes():
-        return False
-    shutil.copyfile(src, dst)
-    return True
 
 
 async def _async_register_static_paths(hass: HomeAssistant, base: Path) -> None:
