@@ -10,7 +10,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN
+from .const import CONF_TOKEN, DOMAIN, USER_AGENT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,13 +53,41 @@ class KaadasImageProxyView(HomeAssistantView):
                         known.add(url)
         return known
 
+    @staticmethod
+    def _find_thumb_token(hass: HomeAssistant, thumb_url: str) -> str:
+        """找到 thumbUrl 所属条目的 token（用于带鉴权头拉图）。"""
+        for entry_data in hass.data.get(DOMAIN, {}).values():
+            if not isinstance(entry_data, dict):
+                continue
+            coordinator = entry_data.get("coordinator")
+            if coordinator is None:
+                continue
+            data = coordinator.data or {}
+            for category in ("visit", "alarm"):
+                for record in data.get(f"{category}_records") or []:
+                    if not isinstance(record, dict):
+                        continue
+                    if str(record.get("thumbUrl") or "").strip() == thumb_url:
+                        entry = getattr(coordinator, "entry", None)
+                        if entry is not None:
+                            return str(entry.data.get(CONF_TOKEN) or "").strip()
+                        return ""
+        return ""
+
     async def get(self, request: Request) -> Response:
         thumb_url = request.query.get("url", "").strip()
         if not thumb_url:
             return Response(status=400, text="missing url")
 
         hass = request.app["hass"]
-        if thumb_url not in self._known_thumb_urls(hass):
+        known = self._known_thumb_urls(hass)
+        if thumb_url not in known:
+            _LOGGER.warning(
+                "凯迪仕图片代理：thumbUrl 不在已知列表。请求=%s，已知(%d)=%s",
+                thumb_url,
+                len(known),
+                list(known)[:5],
+            )
             return Response(status=404, text="not found")
 
         cached = self._cache.get(thumb_url)
@@ -68,14 +96,27 @@ class KaadasImageProxyView(HomeAssistantView):
             content_type, body = cached
             return Response(body=body, content_type=content_type)
 
+        token = self._find_thumb_token(hass, thumb_url)
+        headers = {
+            "Accept": "*/*",
+            "User-Agent": USER_AGENT,
+            "reqSource": "miniProgram",
+            "lang": "zh_CN",
+            "clientOSVersion": "iOS 18.5",
+        }
+        if token:
+            headers["token"] = token
+
         session = async_get_clientsession(hass)
         try:
-            async with session.get(thumb_url, timeout=ClientTimeout(total=30)) as resp:
+            async with session.get(
+                thumb_url, headers=headers, timeout=ClientTimeout(total=30)
+            ) as resp:
                 resp.raise_for_status()
                 body = await resp.read()
                 content_type = resp.headers.get("Content-Type", "image/jpeg")
         except Exception as err:  # noqa: BLE001 - 拉取失败返回 502
-            _LOGGER.warning("代理抓拍图失败：%s", err)
+            _LOGGER.warning("凯迪仕图片代理拉取失败：%s（url=%s）", err, thumb_url)
             return Response(status=502, text="fetch failed")
 
         self._cache[thumb_url] = (content_type, body)

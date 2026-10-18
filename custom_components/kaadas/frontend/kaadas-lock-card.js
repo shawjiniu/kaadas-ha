@@ -12,7 +12,7 @@
  *   数据更新时间（最底端）
  */
 
-const CARD_VERSION = "0.8.1";
+const CARD_VERSION = "0.8.2";
 const BRAND_LOGO = "/kaadas/brand/icon.png";
 
 const LOG = (...args) => console.log("%c[kaadas-lock-card]", "color:#3F8CFF", ...args);
@@ -558,17 +558,10 @@ class KaadasLockCard extends HTMLElement {
   }
 
   _bindInteractions() {
-    // 事件委托：在 shadowRoot 上只绑定一次。
-    // pointerup/touchend 优先处理（部分 WebView 的 click 不稳定），click 作为兜底；
-    // 仅用「最近一次 pointer/touch 点击时间」去重紧随其后的 click，避免同一次 tap 重复触发，
-    // 同时不阻止快速连续切换不同 tab。
+    // 事件委托：在 shadowRoot 上只绑定一次。只用最可靠的 click 事件
+    //（鼠标/触屏各端统一触发），配合交互元素上的 touch-action:none 防止滚动手势吞掉 tap。
     if (this._bound) return;
     this._bound = true;
-
-    let downX = 0;
-    let downY = 0;
-    let downSet = false;
-    let lastPointerTapAt = 0;
 
     const resolveEl = (ev, sel) => {
       // 优先 composedPath（shadow DOM 内最可靠），失败时退回 target.closest
@@ -592,64 +585,16 @@ class KaadasLockCard extends HTMLElement {
       if (toggleEl) {
         const key = toggleEl.dataset.toggle;
         if (key) this._toggleCollapse(key);
-        return true;
+        return;
       }
 
       const recordEl = resolveEl(ev, ".record.has-photo");
       if (recordEl && recordEl.dataset.thumb) {
         this._openPhoto(recordEl.dataset.thumb);
-        return true;
       }
-      return false;
     };
 
-    const isDrag = (x, y) => Math.abs(x - downX) > 12 || Math.abs(y - downY) > 12;
-
-    // pointer 事件（位移超 12px 视为滚动；cancel 时重置）
-    this.shadowRoot.addEventListener("pointerdown", (ev) => {
-      downX = ev.clientX;
-      downY = ev.clientY;
-      downSet = true;
-    });
-    this.shadowRoot.addEventListener("pointerup", (ev) => {
-      if (!downSet) return;
-      downSet = false;
-      if (isDrag(ev.clientX, ev.clientY)) return;
-      if (handleTap(ev)) lastPointerTapAt = Date.now();
-    });
-    this.shadowRoot.addEventListener("pointercancel", () => {
-      downSet = false;
-    });
-
-    // 仅支持触摸事件的老 WebView 兜底
-    this.shadowRoot.addEventListener(
-      "touchstart",
-      (ev) => {
-        const t = ev.changedTouches && ev.changedTouches[0];
-        if (!t) return;
-        downX = t.clientX;
-        downY = t.clientY;
-        downSet = true;
-      },
-      { passive: true }
-    );
-    this.shadowRoot.addEventListener("touchend", (ev) => {
-      if (!downSet) return;
-      downSet = false;
-      const t = ev.changedTouches && ev.changedTouches[0];
-      if (!t) return;
-      if (isDrag(t.clientX, t.clientY)) return;
-      if (handleTap(ev)) lastPointerTapAt = Date.now();
-    });
-    this.shadowRoot.addEventListener("touchcancel", () => {
-      downSet = false;
-    });
-
-    // click 兜底：若 pointer/touch 刚处理过同一次 tap 则跳过
-    this.shadowRoot.addEventListener("click", (ev) => {
-      if (Date.now() - lastPointerTapAt < 400) return;
-      handleTap(ev);
-    });
+    this.shadowRoot.addEventListener("click", handleTap);
   }
 
   _esc(value) {
