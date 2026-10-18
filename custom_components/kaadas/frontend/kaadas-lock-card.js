@@ -12,7 +12,7 @@
  *   数据更新时间（最底端）
  */
 
-const CARD_VERSION = "0.8.2";
+const CARD_VERSION = "0.8.3";
 const BRAND_LOGO = "/kaadas/brand/icon.png";
 
 const LOG = (...args) => console.log("%c[kaadas-lock-card]", "color:#3F8CFF", ...args);
@@ -462,14 +462,10 @@ class KaadasLockCard extends HTMLElement {
       </ha-card>
     `;
 
-    if (!this._rendered) {
-      this.shadowRoot.innerHTML = `<style>${KaadasLockCard.styles}</style>${html}`;
-      this._rendered = true;
-    } else {
-      const card = this.shadowRoot.querySelector("ha-card");
-      if (card) card.outerHTML = html.trim();
-      else this.shadowRoot.innerHTML = `<style>${KaadasLockCard.styles}</style>${html}`;
-    }
+    // 每次整体重建 shadow DOM：App 的 WebView 里 card.outerHTML 替换不可靠，
+    // innerHTML 重建更稳（style 重新注入是幂等的，代价可忽略）。
+    this.shadowRoot.innerHTML = `<style>${KaadasLockCard.styles}</style>${html}`;
+    this._rendered = true;
     this._bindInteractions();
   }
 
