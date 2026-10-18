@@ -125,7 +125,7 @@ entity: lock.kaidas_xxx
 # 可选设置（默认均为 true）：
 # show_chips: true       # 布防/逗留/反锁/在线栏
 # show_stats: true       # 近7天/今日/累计统计
-# show_records: true     # 消息/访客/预警记录 tab
+# show_records: true     # 消息/访客/预警记录（分段展示）
 # show_update_time: true # 数据更新时间
 ```
 
