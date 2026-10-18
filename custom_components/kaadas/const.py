@@ -64,17 +64,4 @@ EVENT_OPERATION = "kaadas_operation"
 EVENT_DOORBELL = "kaadas_doorbell"
 EVENT_ALARM = "kaadas_alarm"
 
-# 记录接口兜底轮询间隔（秒）：门铃/预警不一定走 WS 推送，需低频轮询兜底
-RECORD_POLL_INTERVAL_SECONDS = 30
-
-# 轮询设置（存储在 entry.options）
-CONF_POLLING_MODE = "polling_mode"
-CONF_POLLING_INTERVAL = "polling_interval"
-POLLING_AUTO = "auto"      # 自动轮询：WebSocket 推送 + 定时轮询
-POLLING_MANUAL = "manual"  # 手动轮询：仅 WebSocket 推送 + 手动刷新服务
-DEFAULT_POLLING_MODE = POLLING_MANUAL  # 默认不轮询（门铃/预警均走 WS）
-DEFAULT_POLLING_INTERVAL = 30
-MIN_POLLING_INTERVAL = 5
-
-# 手动刷新服务
-SERVICE_REFRESH = "refresh"
+# 数据更新仅依赖 WebSocket 实时推送，不做定时轮询

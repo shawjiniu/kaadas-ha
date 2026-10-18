@@ -12,7 +12,7 @@
  *   数据更新时间（最底端）
  */
 
-const CARD_VERSION = "0.4.3";
+const CARD_VERSION = "0.5.0";
 const BRAND_LOGO = "/kaadas/brand/icon.png";
 
 const LOG = (...args) => console.log("%c[kaadas-lock-card]", "color:#3F8CFF", ...args);
@@ -164,6 +164,7 @@ class KaadasLockCard extends HTMLElement {
     this._config = {
       show_chips: true,
       show_records: true,
+      show_stats: true,
       show_update_time: true,
       records_limit: 20,
       ...config,
@@ -203,6 +204,12 @@ class KaadasLockCard extends HTMLElement {
       r.byKey.linger_detection,
       r.byKey.locked_inside_status,
       r.byKey.connectivity,
+      r.byKey.seven_day_operation_count,
+      r.byKey.seven_day_doorbell_count,
+      r.byKey.seven_day_alarm_count,
+      r.byKey.today_operation_count,
+      r.byKey.today_doorbell_count,
+      r.byKey.open_count,
     ];
     return ids
       .map((id) => {
@@ -270,6 +277,12 @@ class KaadasLockCard extends HTMLElement {
     const lingerState = this._state(r.byKey.linger_detection);
     const insideState = this._state(r.byKey.locked_inside_status);
     const connState = this._state(r.byKey.connectivity);
+    const sevenDayOpState = this._state(r.byKey.seven_day_operation_count);
+    const sevenDayDoorbellState = this._state(r.byKey.seven_day_doorbell_count);
+    const sevenDayAlarmState = this._state(r.byKey.seven_day_alarm_count);
+    const todayOpState = this._state(r.byKey.today_operation_count);
+    const todayDoorbellState = this._state(r.byKey.today_doorbell_count);
+    const openCountState = this._state(r.byKey.open_count);
 
     const unlocked = lockState?.state === "unlocked";
     const lockText =
@@ -298,6 +311,16 @@ class KaadasLockCard extends HTMLElement {
       { label: "逗留检测", icon: "mdi:motion-sensor", on: linger !== null && linger > 0, text: lingerText },
       { label: "反锁/隐私", icon: "mdi:lock", on: insideOn === true, text: insideOn === null ? "—" : insideOn ? "开" : "关" },
       { label: "在线状态", icon: "mdi:wifi", on: online, text: online ? "在线" : "离线" },
+    ];
+
+    const fmtCount = (v) => (v === null ? "—" : String(v));
+    const statItems = [
+      { label: "近7天开锁", value: fmtCount(num(sevenDayOpState?.state)) },
+      { label: "近7天门铃", value: fmtCount(num(sevenDayDoorbellState?.state)) },
+      { label: "近7天报警", value: fmtCount(num(sevenDayAlarmState?.state)) },
+      { label: "今日开锁", value: fmtCount(num(todayOpState?.state)) },
+      { label: "今日门铃", value: fmtCount(num(todayDoorbellState?.state)) },
+      { label: "累计开锁", value: fmtCount(num(openCountState?.state)) },
     ];
 
     const updateTime = updateState?.state && updateState.state !== "unknown" ? updateState.state : "—";
@@ -339,9 +362,6 @@ class KaadasLockCard extends HTMLElement {
               <div class="name">${this._esc(r.name)}</div>
               <div class="model">${this._esc(r.model || "—")}</div>
             </div>
-            <button type="button" class="refresh-btn" data-refresh="1" aria-label="手动刷新" title="手动刷新">
-              <ha-icon icon="mdi:refresh"></ha-icon>
-            </button>
           </div>
 
           <div class="stats">
@@ -380,6 +400,25 @@ class KaadasLockCard extends HTMLElement {
                        </div>`
                      )
                      .join("")}
+                 </div>`
+              : ""
+          }
+
+          ${
+            cfg.show_stats
+              ? `<div class="statistics">
+                   <div class="statistics-title">统计</div>
+                   <div class="statistics-grid">
+                     ${statItems
+                       .map(
+                         (it) => `
+                       <div class="statistic">
+                         <span class="statistic-value">${this._esc(it.value)}</span>
+                         <span class="statistic-label">${it.label}</span>
+                       </div>`
+                       )
+                       .join("")}
+                   </div>
                  </div>`
               : ""
           }
@@ -487,11 +526,6 @@ class KaadasLockCard extends HTMLElement {
         return true;
       }
 
-      if (resolveEl(ev, "[data-refresh]")) {
-        this._refresh();
-        return true;
-      }
-
       const recordEl = resolveEl(ev, ".record.has-photo");
       if (recordEl && recordEl.dataset.thumb) {
         this._photo = recordEl.dataset.thumb;
@@ -557,23 +591,6 @@ class KaadasLockCard extends HTMLElement {
     });
   }
 
-  _refresh() {
-    const hass = this._hass;
-    if (!hass?.callService) return;
-    const reg = hass.entities?.[this._config.entity];
-    const entryId = reg?.config_entry_id;
-    hass.callService("kaadas", "refresh", entryId ? { entry_id: entryId } : {});
-    // 反馈：图标短暂旋转
-    const icon = this.shadowRoot.querySelector("[data-refresh] ha-icon");
-    if (icon) {
-      icon.classList.add("spinning");
-      setTimeout(() => {
-        const i = this.shadowRoot.querySelector("[data-refresh] ha-icon");
-        if (i) i.classList.remove("spinning");
-      }, 1200);
-    }
-  }
-
   _esc(value) {
     return String(value ?? "").replace(/[&<>"']/g, (c) => ({
       "&": "&amp;",
@@ -611,23 +628,6 @@ class KaadasLockCard extends HTMLElement {
         font-size: 0.78rem; color: var(--secondary-text-color); margin-top: 1px;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
-      .refresh-btn {
-        border: none; background: transparent; cursor: pointer;
-        width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
-        display: flex; align-items: center; justify-content: center;
-        color: var(--secondary-text-color);
-        touch-action: none;
-        -webkit-tap-highlight-color: transparent;
-        -webkit-user-select: none; user-select: none;
-      }
-      .refresh-btn:hover { color: var(--primary-text-color); background: var(--secondary-background-color, #f2f4f7); }
-      .refresh-btn ha-icon { --mdc-icon-size: 20px; }
-      .refresh-btn ha-icon.spinning { animation: kaadas-spin 1s linear infinite; }
-      @keyframes kaadas-spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-
       /* 锁状态 + 电量（高度约为原来的 2/3） */
       .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
       .stat {
@@ -670,6 +670,19 @@ class KaadasLockCard extends HTMLElement {
       .chip-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
       .chip-label { font-size: 0.72rem; color: var(--secondary-text-color); white-space: nowrap; }
       .chip-value { font-size: 0.85rem; font-weight: 600; color: var(--primary-text-color); white-space: nowrap; }
+
+      /* 统计（近 7 天 / 今日 / 累计） */
+      .statistics { display: flex; flex-direction: column; gap: 6px; }
+      .statistics-title { font-size: 0.82rem; font-weight: 600; color: var(--secondary-text-color); }
+      .statistics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .statistic {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 2px; padding: 8px 4px; border-radius: 10px;
+        background: var(--secondary-background-color, #f2f4f7); text-align: center;
+        min-width: 0;
+      }
+      .statistic-value { font-size: 1rem; font-weight: 600; color: var(--primary-text-color); }
+      .statistic-label { font-size: 0.72rem; color: var(--secondary-text-color); white-space: nowrap; }
 
       /* 消息/访客/预警记录：tab 切换 + 滚动列表 */
       .records { display: flex; flex-direction: column; gap: 6px; }
@@ -794,6 +807,9 @@ class KaadasLockCardEditor extends HTMLElement {
           <ha-formfield label="显示消息记录">
             <ha-switch id="show_records"></ha-switch>
           </ha-formfield>
+          <ha-formfield label="显示统计">
+            <ha-switch id="show_stats"></ha-switch>
+          </ha-formfield>
           <ha-formfield label="显示数据更新时间">
             <ha-switch id="show_update_time"></ha-switch>
           </ha-formfield>
@@ -805,10 +821,11 @@ class KaadasLockCardEditor extends HTMLElement {
         const model = this.querySelector("#model").value;
         const show_chips = this.querySelector("#show_chips").checked;
         const show_records = this.querySelector("#show_records").checked;
+        const show_stats = this.querySelector("#show_stats").checked;
         const show_update_time = this.querySelector("#show_update_time").checked;
         this.dispatchEvent(
           new CustomEvent("config-changed", {
-            detail: { config: { ...this._config, entity, name, model, show_chips, show_records, show_update_time } },
+            detail: { config: { ...this._config, entity, name, model, show_chips, show_records, show_stats, show_update_time } },
             bubbles: true,
             composed: true,
           })
@@ -819,6 +836,7 @@ class KaadasLockCardEditor extends HTMLElement {
       this.querySelector("#model").addEventListener("change", fire);
       this.querySelector("#show_chips").addEventListener("change", fire);
       this.querySelector("#show_records").addEventListener("change", fire);
+      this.querySelector("#show_stats").addEventListener("change", fire);
       this.querySelector("#show_update_time").addEventListener("change", fire);
     }
     const e = this.querySelector("#entity");
@@ -828,6 +846,7 @@ class KaadasLockCardEditor extends HTMLElement {
     this.querySelector("#model").value = this._config?.model || "";
     this.querySelector("#show_chips").checked = this._config?.show_chips !== false;
     this.querySelector("#show_records").checked = this._config?.show_records !== false;
+    this.querySelector("#show_stats").checked = this._config?.show_stats !== false;
     this.querySelector("#show_update_time").checked = this._config?.show_update_time !== false;
   }
 }
@@ -851,7 +870,7 @@ if (!window.customCards.some((c) => c.type === "kaadas-lock-card")) {
   window.customCards.push({
     type: "kaadas-lock-card",
     name: "凯迪仕门锁卡片",
-    description: "凯迪仕智能门锁状态卡片（锁状态、电量、消息/访客/预警记录 tab 切换，抓拍图点击预览）",
+    description: "凯迪仕智能门锁状态卡片（锁状态、电量、近7天/今日/累计统计、消息/访客/预警记录 tab 切换，抓拍图点击预览）",
     preview: true,
     documentationURL: "https://github.com/custom-components/kaadas",
   });

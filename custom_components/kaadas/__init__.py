@@ -3,20 +3,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, SERVICE_REFRESH
+from .const import DOMAIN
 from .coordinator import KaadasCoordinator
 from .token_manager import KaadasTokenManager
 from .websocket import KaadasWebSocket
 
 _LOGGER = logging.getLogger(__name__)
-
-REFRESH_SCHEMA = vol.Schema({vol.Optional("entry_id"): str})
 
 PLATFORMS: list[Platform] = [
     Platform.LOCK,
@@ -30,31 +26,13 @@ BRAND_URL = "/kaadas/brand"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """注册前端静态路径与手动刷新服务。"""
+    """注册前端静态路径。"""
     # 前端静态路径（卡片 JS + 品牌图标）：在 async_setup 阶段注册（与
     # chinese_calendar 一致），保证手机 App 通过 /kaadas/frontend/ 也能加载卡片。
     try:
         await _async_register_static_paths(hass, Path(__file__).parent)
     except Exception as err:  # noqa: BLE001 - 静态路径失败不阻塞其它功能
         _LOGGER.error("凯迪仕静态路径注册失败：%s", err)
-
-    async def _refresh(call) -> None:
-        entry_id = call.data.get("entry_id")
-        if entry_id:
-            entries = [hass.config_entries.async_get_entry(entry_id)]
-        else:
-            entries = list(hass.config_entries.async_entries(DOMAIN))
-        for entry in entries:
-            if not entry or entry.domain != DOMAIN:
-                continue
-            data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-            if data and data.get("coordinator"):
-                await data["coordinator"].async_request_refresh()
-                _LOGGER.info("凯迪仕 %s 手动刷新", entry.entry_id)
-
-    hass.services.async_register(
-        DOMAIN, SERVICE_REFRESH, _refresh, schema=REFRESH_SCHEMA
-    )
     return True
 
 

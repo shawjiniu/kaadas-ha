@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -16,8 +15,6 @@ from .const import (
     CONF_ESN,
     CONF_IS_THING_MODEL,
     CONF_NICKNAME,
-    CONF_POLLING_INTERVAL,
-    CONF_POLLING_MODE,
     CONF_WIFI_SN,
     DOMAIN,
     EVENT_ALARM,
@@ -25,9 +22,6 @@ from .const import (
     EVENT_OPERATION,
     LOCK_STATUS_LOCKED,
     LOCK_STATUS_UNLOCKED,
-    MIN_POLLING_INTERVAL,
-    DEFAULT_POLLING_MODE,
-    POLLING_AUTO,
     PROP_ALARM_TYPE,
     PROP_AUTO_CLOSE_LOCK_TIME,
     PROP_BATTERY_LEVEL,
@@ -51,7 +45,6 @@ from .const import (
     PROP_WIFI_RSSI,
     RECORD_ALARM,
     RECORD_OPERATION,
-    RECORD_POLL_INTERVAL_SECONDS,
     RECORD_VISIT,
     SERVICE_BASIC,
     SERVICE_LOCK,
@@ -135,7 +128,7 @@ def device_info(entry: ConfigEntry, data: dict[str, Any]) -> dict[str, Any]:
 
 
 class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """数据协调器：WebSocket 实时推送 + 低频轮询兜底。
+    """数据协调器：仅靠 WebSocket 实时推送触发刷新，不做定时轮询。
 
     每次刷新会拉取操作/访客/预警三类记录，并按记录 ``id`` 去重后，
     对新出现的记录在 HA 事件总线上触发 ``kaadas_*`` 事件。
@@ -155,25 +148,11 @@ class KaadasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         self._seen_loaded = False
 
-        # 轮询配置：自动模式下按配置间隔轮询；手动模式仅 WS 推送 + 手动刷新服务
-        options = entry.options or {}
-        polling_mode = str(options.get(CONF_POLLING_MODE) or DEFAULT_POLLING_MODE)
-        polling_interval = _to_int(options.get(CONF_POLLING_INTERVAL))
-        if polling_interval < MIN_POLLING_INTERVAL:
-            polling_interval = RECORD_POLL_INTERVAL_SECONDS
-        self._polling_mode = polling_mode
-        self._polling_interval = polling_interval
-        update_interval = (
-            timedelta(seconds=polling_interval)
-            if polling_mode == POLLING_AUTO
-            else None
-        )
-
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=update_interval,
+            update_interval=None,
             always_update=True,
         )
 

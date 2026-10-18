@@ -12,9 +12,11 @@
 
 - **状态开关**：布防模式、反锁/隐私、双重验证、屏幕、在线状态
 
-- **云端 WebSocket 实时推送 + 轮询兜底**：开关锁 / 上下线 / 门铃靠 WS 即时刷新；轮询作为兜底（可配置自动/手动与间隔）
+- **云端 WebSocket 实时推送**：开关锁 / 上下线 / 门铃靠 WS 即时刷新（不做定时轮询）
 
-- **消息记录**：最近操作（操作人 + 操作内容）、最近访客（门铃）、最近预警、近 7 天与当日统计、累计开锁次数
+- **消息记录**：最近操作（操作人 + 操作内容）、最近访客（门铃）、最近预警
+
+- **统计传感器**：近 7 天与当日开锁/门铃/报警次数、累计开锁次数（卡片可显示，可在卡片设置里开关）
 
 - **事件自动化**：新记录触发 `kaadas_operation` / `kaadas_doorbell` / `kaadas_alarm` 事件
 
@@ -92,7 +94,7 @@
 
 抓拍相机实体搜索「门铃抓拍」「预警抓拍」即可（`camera` 平台）。
 
-## 访客 / 预警记录的获取方式与轮询设置
+## 访客 / 预警记录的获取方式
 
 **门铃/访客与预警都走 WebSocket 推送**：小程序源码确认，云端 WebSocket 会推 `DoorBellRinging`（门铃）、`DoorPanelCall`（面板呼叫）、`Unlock`/`Locked`（开关锁）、`Online`/`Offline`（上下线）与 `iot_property`（物模型属性/事件）。因此：
 
@@ -102,31 +104,7 @@
 | 访客记录（门铃） | **WS 推 `DoorBellRinging`** → 即时刷新 → 拉 `/record/operation/visit` |
 | 预警记录（逗留/报警） | **WS 推** → 即时刷新 → 拉 `/record/operation/alarm` |
 
-> 实测：手动模式（不轮询）下仍能收到门铃/访客与预警信息，印证两者都走 WS。
-
-**轮询的作用**：仅作为 WS 断线/漏消息时的兜底补偿；门铃与预警均可完全依赖 WS。
-
-**轮询设置**：设置 → 设备与服务 → 凯迪仕门锁 →「配置」（选项）里可设置：
-
-- **轮询方式**：自动轮询（WebSocket + 定时）或手动轮询（仅 WebSocket + 手动刷新），**默认「手动」（不轮询）**。
-- **轮询间隔**：5–3600 秒（默认 30，仅在自动轮询模式下生效）。
-
-**手动刷新**：
-
-- 服务：`kaadas.refresh`（可带可选字段 `entry_id`，留空则刷新全部凯迪仕条目）。
-- 卡片：右上角 🔄 按钮，点击立即拉取最新状态与记录。
-
-```yaml
-# 手动刷新全部
-action:
-  - service: kaadas.refresh
-
-# 手动刷新指定条目
-action:
-  - service: kaadas.refresh
-    data:
-      entry_id: "abc123..."
-```
+> 数据更新完全依赖 WebSocket 实时推送，无定时轮询、无手动刷新按钮/服务。
 
 ## 仪表盘卡片
 
@@ -144,6 +122,11 @@ action:
 ```yaml
 type: custom:kaadas-lock-card
 entity: lock.kaidas_xxx
+# 可选设置（默认均为 true）：
+# show_chips: true       # 布防/逗留/反锁/在线栏
+# show_stats: true       # 近7天/今日/累计统计
+# show_records: true     # 消息/访客/预警记录 tab
+# show_update_time: true # 数据更新时间
 ```
 
 > 本集成仅开发者个人使用，未经充分测试

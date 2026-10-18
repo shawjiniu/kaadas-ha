@@ -18,16 +18,10 @@ from .const import (
     CONF_OPENID,
     CONF_OPENID_TOKEN,
     CONF_PHONE,
-    CONF_POLLING_INTERVAL,
-    CONF_POLLING_MODE,
     CONF_TOKEN,
     CONF_UID,
     CONF_WIFI_SN,
-    DEFAULT_POLLING_INTERVAL,
-    DEFAULT_POLLING_MODE,
     DOMAIN,
-    POLLING_AUTO,
-    POLLING_MANUAL,
 )
 
 CONF_DEVICE_CHOICE = "device_choice"
@@ -79,35 +73,13 @@ def _reauth_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
 
 
 def _options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    """选项流程：凭证 + 轮询设置。"""
+    """选项流程：更新凭证。"""
     defaults = defaults or {}
     return vol.Schema(
         {
             vol.Required(CONF_OPENID, default=defaults.get(CONF_OPENID, "")): str,
             vol.Required(CONF_PHONE, default=defaults.get(CONF_PHONE, "")): str,
             vol.Required(CONF_OPENID_TOKEN, default=defaults.get(CONF_OPENID_TOKEN, "")): str,
-            vol.Required(
-                CONF_POLLING_MODE, default=defaults.get(CONF_POLLING_MODE, DEFAULT_POLLING_MODE)
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        {"value": POLLING_AUTO, "label": "自动轮询（WebSocket + 定时）"},
-                        {"value": POLLING_MANUAL, "label": "手动轮询（仅 WebSocket + 手动刷新）"},
-                    ],
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                    custom_value=False,
-                )
-            ),
-            vol.Required(
-                CONF_POLLING_INTERVAL,
-                default=defaults.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=5, max=3600, step=5,
-                    mode=selector.NumberSelectorMode.BOX,
-                    unit_of_measurement="秒",
-                )
-            ),
         }
     )
 
@@ -306,10 +278,6 @@ class KaadasOptionsFlow(config_entries.OptionsFlow):
             CONF_OPENID: self._entry.data.get(CONF_OPENID, ""),
             CONF_PHONE: self._entry.data.get(CONF_PHONE, ""),
             CONF_OPENID_TOKEN: self._entry.data.get(CONF_OPENID_TOKEN, ""),
-            CONF_POLLING_MODE: self._entry.options.get(CONF_POLLING_MODE, DEFAULT_POLLING_MODE),
-            CONF_POLLING_INTERVAL: self._entry.options.get(
-                CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL
-            ),
         }
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
@@ -318,10 +286,6 @@ class KaadasOptionsFlow(config_entries.OptionsFlow):
             openid = str(user_input.get(CONF_OPENID) or "").strip()
             phone = str(user_input.get(CONF_PHONE) or "").strip()
             open_id_token = str(user_input.get(CONF_OPENID_TOKEN) or "").strip()
-            polling_mode = str(user_input.get(CONF_POLLING_MODE) or DEFAULT_POLLING_MODE)
-            polling_interval = int(
-                user_input.get(CONF_POLLING_INTERVAL) or DEFAULT_POLLING_INTERVAL
-            )
             try:
                 token, uid, devices = await _login_and_fetch_devices(
                     self.hass, openid, phone, open_id_token
@@ -338,8 +302,6 @@ class KaadasOptionsFlow(config_entries.OptionsFlow):
                     CONF_OPENID: openid,
                     CONF_PHONE: phone,
                     CONF_OPENID_TOKEN: open_id_token,
-                    CONF_POLLING_MODE: polling_mode,
-                    CONF_POLLING_INTERVAL: polling_interval,
                 }
                 return await self.async_step_select_device()
 
@@ -374,12 +336,7 @@ class KaadasOptionsFlow(config_entries.OptionsFlow):
                 self.hass.config_entries.async_update_entry(
                     self._entry,
                     data=data,
-                    options={
-                        CONF_POLLING_MODE: self._pending.get(CONF_POLLING_MODE, DEFAULT_POLLING_MODE),
-                        CONF_POLLING_INTERVAL: self._pending.get(
-                            CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL
-                        ),
-                    },
+                    options={},
                 )
                 await self.hass.config_entries.async_reload(self._entry.entry_id)
                 return self.async_abort(reason="updated")
