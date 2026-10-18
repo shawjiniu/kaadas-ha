@@ -12,7 +12,7 @@
  *   数据更新时间（最底端）
  */
 
-const CARD_VERSION = "0.8.3";
+const CARD_VERSION = "0.8.4";
 const BRAND_LOGO = "/kaadas/brand/icon.png";
 
 const LOG = (...args) => console.log("%c[kaadas-lock-card]", "color:#3F8CFF", ...args);
@@ -693,7 +693,7 @@ class KaadasLockCard extends HTMLElement {
         display: flex; align-items: center; gap: 4px;
         font-size: 0.82rem; font-weight: 600; color: var(--primary-text-color);
         cursor: pointer; user-select: none;
-        touch-action: none;
+        touch-action: manipulation;
         -webkit-tap-highlight-color: transparent;
         -webkit-user-select: none;
         border-radius: 6px; padding: 2px 4px;
@@ -701,7 +701,8 @@ class KaadasLockCard extends HTMLElement {
       .record-section-title:hover { background: var(--secondary-background-color, #f2f4f7); }
       .record-chevron { --mdc-icon-size: 18px; color: var(--secondary-text-color); flex: 0 0 auto; transition: transform 0.15s; }
       .record-count { font-size: 0.72rem; font-weight: 400; color: var(--secondary-text-color); }
-      .records-list { display: flex; flex-direction: column; max-height: 120px; overflow-y: auto; }
+      /* 记录不再做内嵌滚动：直接纵向平铺，整张卡片随仪表盘一起滚动（手机上最自然） */
+      .records-list { display: flex; flex-direction: column; }
       .record {
         display: flex; gap: 10px; padding: 6px 0; font-size: 0.82rem;
         border-bottom: 1px dashed var(--divider-color, #e0e0e0);
@@ -716,7 +717,7 @@ class KaadasLockCard extends HTMLElement {
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
       .records-empty { font-size: 0.82rem; color: var(--secondary-text-color); padding: 6px 0; }
-      .record.has-photo { cursor: pointer; border-radius: 4px; touch-action: none; }
+      .record.has-photo { cursor: pointer; border-radius: 4px; touch-action: manipulation; }
       .record.has-photo:hover { background: var(--secondary-background-color, #f2f4f7); }
       .record-photo-icon { --mdc-icon-size: 16px; color: var(--secondary-text-color); flex: 0 0 auto; align-self: center; }
 
