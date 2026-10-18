@@ -18,51 +18,55 @@ _CACHE_MAX = 64
 
 
 class KaadasImageProxyView(HomeAssistantView):
-    """按记录 id 精确代理凯迪仕抓拍图（服务端拉图，避免前端直连云端 URL）。"""
+    """服务端代理凯迪仕抓拍图。
 
-    url = "/api/kaadas/image_proxy/{entry_id}/{category}/{record_id}"
+    前端把记录里的 thumbUrl 作为 ``url`` 查询参数传入；服务端只在
+    「协调器已拉取的记录里存在该 thumbUrl」时才去拉图并返回，避免 SSRF。
+    """
+
+    url = "/api/kaadas/image_proxy"
     name = "api:kaadas:image_proxy"
     # 图片通过 <img> 加载（无法带 Authorization 头），故不强制登录；
-    # 安全性靠 URL 里的 entry_id(UUID) + record_id(ObjectId) 随机性 + 只查已拉取数据（防 SSRF）。
+    # 安全性靠「只允许已存在于记录数据里的 thumbUrl」白名单 + URL 随机性。
     requires_auth = False
 
     def __init__(self) -> None:
         self._cache: OrderedDict[str, tuple[str, bytes]] = OrderedDict()
 
     @staticmethod
-    def _lookup_thumb_url(
-        hass: HomeAssistant, entry_id: str, category: str, record_id: str
-    ) -> str:
-        """从协调器已拉取的数据里按记录 id 查 thumbUrl（不接受任意 URL，防 SSRF）。"""
-        data = hass.data.get(DOMAIN, {}).get(entry_id, {})
-        coordinator = data.get("coordinator")
-        if coordinator is None:
-            return ""
-        records = (coordinator.data or {}).get(f"{category}_records") or []
-        for record in records:
-            if not isinstance(record, dict):
+    def _known_thumb_urls(hass: HomeAssistant) -> set[str]:
+        """收集当前所有条目里已知的抓拍图 thumbUrl。"""
+        known: set[str] = set()
+        for entry_data in hass.data.get(DOMAIN, {}).values():
+            if not isinstance(entry_data, dict):
                 continue
-            if str(record.get("id") or "") == record_id:
-                return str(record.get("thumbUrl") or "").strip()
-        return ""
+            coordinator = entry_data.get("coordinator")
+            if coordinator is None:
+                continue
+            data = coordinator.data or {}
+            for category in ("visit", "alarm"):
+                for record in data.get(f"{category}_records") or []:
+                    if not isinstance(record, dict):
+                        continue
+                    url = str(record.get("thumbUrl") or "").strip()
+                    if url:
+                        known.add(url)
+        return known
 
-    async def get(
-        self, request: Request, entry_id: str, category: str, record_id: str
-    ) -> Response:
-        if category not in ("visit", "alarm"):
-            return Response(status=404, text="not found")
+    async def get(self, request: Request) -> Response:
+        thumb_url = request.query.get("url", "").strip()
+        if not thumb_url:
+            return Response(status=400, text="missing url")
 
         hass = request.app["hass"]
-        cache_key = f"{entry_id}:{category}:{record_id}"
-        cached = self._cache.get(cache_key)
+        if thumb_url not in self._known_thumb_urls(hass):
+            return Response(status=404, text="not found")
+
+        cached = self._cache.get(thumb_url)
         if cached is not None:
-            self._cache.move_to_end(cache_key)
+            self._cache.move_to_end(thumb_url)
             content_type, body = cached
             return Response(body=body, content_type=content_type)
-
-        thumb_url = self._lookup_thumb_url(hass, entry_id, category, record_id)
-        if not thumb_url:
-            return Response(status=404, text="not found")
 
         session = async_get_clientsession(hass)
         try:
@@ -74,8 +78,8 @@ class KaadasImageProxyView(HomeAssistantView):
             _LOGGER.warning("代理抓拍图失败：%s", err)
             return Response(status=502, text="fetch failed")
 
-        self._cache[cache_key] = (content_type, body)
-        self._cache.move_to_end(cache_key)
+        self._cache[thumb_url] = (content_type, body)
+        self._cache.move_to_end(thumb_url)
         while len(self._cache) > _CACHE_MAX:
             self._cache.popitem(last=False)
 

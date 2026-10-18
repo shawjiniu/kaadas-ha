@@ -12,7 +12,7 @@
  *   数据更新时间（最底端）
  */
 
-const CARD_VERSION = "0.8.0";
+const CARD_VERSION = "0.8.1";
 const BRAND_LOGO = "/kaadas/brand/icon.png";
 
 const LOG = (...args) => console.log("%c[kaadas-lock-card]", "color:#3F8CFF", ...args);
@@ -354,9 +354,8 @@ class KaadasLockCard extends HTMLElement {
         .slice(0, cfg.records_limit)
         .map((rec) => {
           const thumb = String(getField(rec, "thumbUrl") ?? "").trim();
-          const rid = String(getField(rec, "id") ?? "").trim();
           return `
-        <div class="record ${thumb ? "has-photo" : ""}" ${thumb ? `data-thumb="${this._esc(thumb)}" data-id="${this._esc(rid)}" data-category="${s.key}"` : ""}>
+        <div class="record ${thumb ? "has-photo" : ""}" ${thumb ? `data-thumb="${this._esc(thumb)}"` : ""}>
           <span class="record-time">${this._esc(fmtTime(rec?.time))}</span>
           <span class="record-msg">${this._esc(recordMessage(rec))}</span>
           ${thumb ? `<ha-icon class="record-photo-icon" icon="mdi:image-outline"></ha-icon>` : ""}
@@ -492,11 +491,6 @@ class KaadasLockCard extends HTMLElement {
     this._safeRender();
   }
 
-  _entryId() {
-    const reg = this._hass?.entities?.[this._config.entity];
-    return reg?.config_entry_id || "";
-  }
-
   static _ensurePhotoStyles() {
     if (KaadasLockCard._photoStylesInjected) return;
     KaadasLockCard._photoStylesInjected = true;
@@ -530,10 +524,10 @@ class KaadasLockCard extends HTMLElement {
     document.head.appendChild(style);
   }
 
-  _openPhoto(recordId, category) {
-    const entryId = this._entryId();
-    if (!entryId || !recordId || !category) return;
-    const url = `/api/kaadas/image_proxy/${encodeURIComponent(entryId)}/${encodeURIComponent(category)}/${encodeURIComponent(recordId)}`;
+  _openPhoto(thumb) {
+    if (!thumb) return;
+    const url = `/api/kaadas/image_proxy?url=${encodeURIComponent(thumb)}`;
+    LOG("open photo", url);
 
     this._closePhoto();
     KaadasLockCard._ensurePhotoStyles();
@@ -602,8 +596,8 @@ class KaadasLockCard extends HTMLElement {
       }
 
       const recordEl = resolveEl(ev, ".record.has-photo");
-      if (recordEl && recordEl.dataset.id) {
-        this._openPhoto(recordEl.dataset.id, recordEl.dataset.category);
+      if (recordEl && recordEl.dataset.thumb) {
+        this._openPhoto(recordEl.dataset.thumb);
         return true;
       }
       return false;
