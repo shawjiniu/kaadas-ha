@@ -122,11 +122,16 @@
 ```yaml
 type: custom:kaadas-lock-card
 entity: lock.kaidas_xxx
-# 可选设置（默认均为 true）：
-# show_chips: true       # 布防/逗留/反锁/在线栏
-# show_stats: true       # 近7天/今日/累计统计
-# show_records: true     # 消息/访客/预警记录（分段展示）
-# show_update_time: true # 数据更新时间
+# 可选设置：
+# show_chips: true                # 布防/逗留/反锁/在线栏（默认 true）
+# show_stats: true                # 近7天/今日/累计统计（默认 true）
+# show_update_time: true          # 数据更新时间（默认 true）
+# show_operation_records: true    # 显示消息记录（默认 true）
+# collapse_operation_records: false  # 消息记录默认折叠
+# show_visit_records: true        # 显示访客记录（默认 true）
+# collapse_visit_records: false   # 访客记录默认折叠
+# show_alarm_records: true        # 显示预警记录（默认 true）
+# collapse_alarm_records: false   # 预警记录默认折叠
 ```
 
 > 本集成仅开发者个人使用，未经充分测试

@@ -12,7 +12,7 @@
  *   数据更新时间（最底端）
  */
 
-const CARD_VERSION = "0.6.0";
+const CARD_VERSION = "0.7.0";
 const BRAND_LOGO = "/kaadas/brand/icon.png";
 
 const LOG = (...args) => console.log("%c[kaadas-lock-card]", "color:#3F8CFF", ...args);
@@ -137,6 +137,7 @@ class KaadasLockCard extends HTMLElement {
     this._rendered = false;
     this._photo = null;
     this._bound = false;
+    this._collapsed = {};
   }
 
   static getStubConfig(hass) {
@@ -162,10 +163,15 @@ class KaadasLockCard extends HTMLElement {
     }
     this._config = {
       show_chips: true,
-      show_records: true,
       show_stats: true,
       show_update_time: true,
       records_limit: 20,
+      show_operation_records: true,
+      show_visit_records: true,
+      show_alarm_records: true,
+      collapse_operation_records: false,
+      collapse_visit_records: false,
+      collapse_alarm_records: false,
       ...config,
     };
     this._rendered = false;
@@ -332,8 +338,15 @@ class KaadasLockCard extends HTMLElement {
     const alarmRecords = Array.isArray(alarmRecordsState?.attributes?.["预警记录"])
       ? alarmRecordsState.attributes["预警记录"]
       : [];
-    const renderRecords = (title, list) => {
-      const items = list
+    const recordSections = [
+      { key: "operation", title: "消息记录", records: operationRecords },
+      { key: "visit", title: "访客记录", records: visitRecords },
+      { key: "alarm", title: "预警记录", records: alarmRecords },
+    ].filter((s) => this._config["show_" + s.key + "_records"] !== false);
+
+    const renderRecordSection = (s) => {
+      const collapsed = this._isCollapsed(s.key);
+      const items = s.records
         .slice(0, cfg.records_limit)
         .map((rec) => {
           const thumb = String(getField(rec, "thumbUrl") ?? "").trim();
@@ -346,9 +359,13 @@ class KaadasLockCard extends HTMLElement {
         })
         .join("");
       return `
-      <div class="record-section">
-        <div class="record-section-title">${title}<span class="record-count">${list.length ? ` · ${list.length}` : ""}</span></div>
-        <div class="records-list">${items || `<div class="records-empty">暂无记录</div>`}</div>
+      <div class="record-section ${collapsed ? "collapsed" : ""}">
+        <div class="record-section-title" data-toggle="${s.key}" role="button" tabindex="0" aria-expanded="${collapsed ? "false" : "true"}">
+          <ha-icon class="record-chevron" icon="${collapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"></ha-icon>
+          <span>${s.title}</span>
+          <span class="record-count">${s.records.length ? `· ${s.records.length}` : ""}</span>
+        </div>
+        ${collapsed ? "" : `<div class="records-list">${items || `<div class="records-empty">暂无记录</div>`}</div>`}
       </div>`;
     };
 
@@ -435,11 +452,9 @@ class KaadasLockCard extends HTMLElement {
           }
 
           ${
-            cfg.show_records
+            recordSections.length
               ? `<div class="records">
-                   ${renderRecords("消息记录", operationRecords)}
-                   ${renderRecords("访客记录", visitRecords)}
-                   ${renderRecords("预警记录", alarmRecords)}
+                   ${recordSections.map(renderRecordSection).join("")}
                  </div>`
               : ""
           }
@@ -473,6 +488,16 @@ class KaadasLockCard extends HTMLElement {
     }
   }
 
+  _isCollapsed(key) {
+    if (this._collapsed[key] !== undefined) return this._collapsed[key];
+    return this._config["collapse_" + key + "_records"] === true;
+  }
+
+  _toggleCollapse(key) {
+    this._collapsed[key] = !this._isCollapsed(key);
+    this._safeRender();
+  }
+
   _bindInteractions() {
     // 事件委托：在 shadowRoot 上只绑定一次。
     // pointerup/touchend 优先处理（部分 WebView 的 click 不稳定），click 作为兜底；
@@ -504,6 +529,13 @@ class KaadasLockCard extends HTMLElement {
     };
 
     const handleTap = (ev) => {
+      const toggleEl = resolveEl(ev, "[data-toggle]");
+      if (toggleEl) {
+        const key = toggleEl.dataset.toggle;
+        if (key) this._toggleCollapse(key);
+        return true;
+      }
+
       const recordEl = resolveEl(ev, ".record.has-photo");
       if (recordEl && recordEl.dataset.thumb) {
         this._photo = recordEl.dataset.thumb;
@@ -662,13 +694,20 @@ class KaadasLockCard extends HTMLElement {
       .statistic-value { font-size: 1rem; font-weight: 600; color: var(--primary-text-color); }
       .statistic-label { font-size: 0.72rem; color: var(--secondary-text-color); white-space: nowrap; }
 
-      /* 消息/访客/预警记录：三段纵向展示（无 tab） */
-      .records { display: flex; flex-direction: column; gap: 12px; }
+      /* 消息/访客/预警记录：三段纵向展示，标题栏可点击伸缩 */
+      .records { display: flex; flex-direction: column; gap: 10px; }
       .record-section { display: flex; flex-direction: column; gap: 4px; }
       .record-section-title {
-        display: flex; align-items: baseline; gap: 4px;
+        display: flex; align-items: center; gap: 4px;
         font-size: 0.82rem; font-weight: 600; color: var(--primary-text-color);
+        cursor: pointer; user-select: none;
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-user-select: none;
+        border-radius: 6px; padding: 2px 4px;
       }
+      .record-section-title:hover { background: var(--secondary-background-color, #f2f4f7); }
+      .record-chevron { --mdc-icon-size: 18px; color: var(--secondary-text-color); flex: 0 0 auto; transition: transform 0.15s; }
       .record-count { font-size: 0.72rem; font-weight: 400; color: var(--secondary-text-color); }
       .records-list { display: flex; flex-direction: column; max-height: 120px; overflow-y: auto; }
       .record {
@@ -768,7 +807,22 @@ class KaadasLockCardEditor extends HTMLElement {
             <ha-switch id="show_chips"></ha-switch>
           </ha-formfield>
           <ha-formfield label="显示消息记录">
-            <ha-switch id="show_records"></ha-switch>
+            <ha-switch id="show_operation_records"></ha-switch>
+          </ha-formfield>
+          <ha-formfield label="消息记录默认折叠">
+            <ha-switch id="collapse_operation_records"></ha-switch>
+          </ha-formfield>
+          <ha-formfield label="显示访客记录">
+            <ha-switch id="show_visit_records"></ha-switch>
+          </ha-formfield>
+          <ha-formfield label="访客记录默认折叠">
+            <ha-switch id="collapse_visit_records"></ha-switch>
+          </ha-formfield>
+          <ha-formfield label="显示预警记录">
+            <ha-switch id="show_alarm_records"></ha-switch>
+          </ha-formfield>
+          <ha-formfield label="预警记录默认折叠">
+            <ha-switch id="collapse_alarm_records"></ha-switch>
           </ha-formfield>
           <ha-formfield label="显示统计">
             <ha-switch id="show_stats"></ha-switch>
@@ -783,12 +837,17 @@ class KaadasLockCardEditor extends HTMLElement {
         const name = this.querySelector("#name").value;
         const model = this.querySelector("#model").value;
         const show_chips = this.querySelector("#show_chips").checked;
-        const show_records = this.querySelector("#show_records").checked;
+        const show_operation_records = this.querySelector("#show_operation_records").checked;
+        const collapse_operation_records = this.querySelector("#collapse_operation_records").checked;
+        const show_visit_records = this.querySelector("#show_visit_records").checked;
+        const collapse_visit_records = this.querySelector("#collapse_visit_records").checked;
+        const show_alarm_records = this.querySelector("#show_alarm_records").checked;
+        const collapse_alarm_records = this.querySelector("#collapse_alarm_records").checked;
         const show_stats = this.querySelector("#show_stats").checked;
         const show_update_time = this.querySelector("#show_update_time").checked;
         this.dispatchEvent(
           new CustomEvent("config-changed", {
-            detail: { config: { ...this._config, entity, name, model, show_chips, show_records, show_stats, show_update_time } },
+            detail: { config: { ...this._config, entity, name, model, show_chips, show_operation_records, collapse_operation_records, show_visit_records, collapse_visit_records, show_alarm_records, collapse_alarm_records, show_stats, show_update_time } },
             bubbles: true,
             composed: true,
           })
@@ -798,7 +857,12 @@ class KaadasLockCardEditor extends HTMLElement {
       this.querySelector("#name").addEventListener("change", fire);
       this.querySelector("#model").addEventListener("change", fire);
       this.querySelector("#show_chips").addEventListener("change", fire);
-      this.querySelector("#show_records").addEventListener("change", fire);
+      this.querySelector("#show_operation_records").addEventListener("change", fire);
+      this.querySelector("#collapse_operation_records").addEventListener("change", fire);
+      this.querySelector("#show_visit_records").addEventListener("change", fire);
+      this.querySelector("#collapse_visit_records").addEventListener("change", fire);
+      this.querySelector("#show_alarm_records").addEventListener("change", fire);
+      this.querySelector("#collapse_alarm_records").addEventListener("change", fire);
       this.querySelector("#show_stats").addEventListener("change", fire);
       this.querySelector("#show_update_time").addEventListener("change", fire);
     }
@@ -808,7 +872,12 @@ class KaadasLockCardEditor extends HTMLElement {
     this.querySelector("#name").value = this._config?.name || "";
     this.querySelector("#model").value = this._config?.model || "";
     this.querySelector("#show_chips").checked = this._config?.show_chips !== false;
-    this.querySelector("#show_records").checked = this._config?.show_records !== false;
+    this.querySelector("#show_operation_records").checked = this._config?.show_operation_records !== false;
+    this.querySelector("#collapse_operation_records").checked = this._config?.collapse_operation_records === true;
+    this.querySelector("#show_visit_records").checked = this._config?.show_visit_records !== false;
+    this.querySelector("#collapse_visit_records").checked = this._config?.collapse_visit_records === true;
+    this.querySelector("#show_alarm_records").checked = this._config?.show_alarm_records !== false;
+    this.querySelector("#collapse_alarm_records").checked = this._config?.collapse_alarm_records === true;
     this.querySelector("#show_stats").checked = this._config?.show_stats !== false;
     this.querySelector("#show_update_time").checked = this._config?.show_update_time !== false;
   }
@@ -833,7 +902,7 @@ if (!window.customCards.some((c) => c.type === "kaadas-lock-card")) {
   window.customCards.push({
     type: "kaadas-lock-card",
     name: "凯迪仕门锁卡片",
-    description: "凯迪仕智能门锁状态卡片（锁状态、电量、近7天/今日/累计统计、消息/访客/预警记录分段展示，抓拍图点击预览）",
+    description: "凯迪仕智能门锁状态卡片（锁状态、电量、近7天/今日/累计统计、消息/访客/预警记录可折叠分段展示，抓拍图点击预览）",
     preview: true,
     documentationURL: "https://github.com/custom-components/kaadas",
   });
