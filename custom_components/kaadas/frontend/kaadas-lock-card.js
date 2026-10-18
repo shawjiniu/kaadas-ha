@@ -12,7 +12,7 @@
  *   数据更新时间（最底端）
  */
 
-const CARD_VERSION = "0.7.0";
+const CARD_VERSION = "0.8.0";
 const BRAND_LOGO = "/kaadas/brand/icon.png";
 
 const LOG = (...args) => console.log("%c[kaadas-lock-card]", "color:#3F8CFF", ...args);
@@ -135,9 +135,13 @@ class KaadasLockCard extends HTMLElement {
     this._config = {};
     this._hass = null;
     this._rendered = false;
-    this._photo = null;
     this._bound = false;
     this._collapsed = {};
+    this._photoOverlay = null;
+  }
+
+  disconnectedCallback() {
+    this._closePhoto();
   }
 
   static getStubConfig(hass) {
@@ -350,8 +354,9 @@ class KaadasLockCard extends HTMLElement {
         .slice(0, cfg.records_limit)
         .map((rec) => {
           const thumb = String(getField(rec, "thumbUrl") ?? "").trim();
+          const rid = String(getField(rec, "id") ?? "").trim();
           return `
-        <div class="record ${thumb ? "has-photo" : ""}" ${thumb ? `data-thumb="${this._esc(thumb)}"` : ""}>
+        <div class="record ${thumb ? "has-photo" : ""}" ${thumb ? `data-thumb="${this._esc(thumb)}" data-id="${this._esc(rid)}" data-category="${s.key}"` : ""}>
           <span class="record-time">${this._esc(fmtTime(rec?.time))}</span>
           <span class="record-msg">${this._esc(recordMessage(rec))}</span>
           ${thumb ? `<ha-icon class="record-photo-icon" icon="mdi:image-outline"></ha-icon>` : ""}
@@ -368,16 +373,6 @@ class KaadasLockCard extends HTMLElement {
         ${collapsed ? "" : `<div class="records-list">${items || `<div class="records-empty">暂无记录</div>`}</div>`}
       </div>`;
     };
-
-    const photoModal = this._photo
-      ? `<div class="photo-modal">
-           <div class="photo-backdrop" data-close="1"></div>
-           <div class="photo-box">
-             <img src="${this._esc(this._photo)}" alt="抓拍图" />
-             <button type="button" class="photo-close" data-close="1" aria-label="关闭"><ha-icon icon="mdi:close"></ha-icon></button>
-           </div>
-         </div>`
-      : "";
 
     const html = `
       <ha-card>
@@ -465,7 +460,6 @@ class KaadasLockCard extends HTMLElement {
               : ""
           }
         </div>
-        ${photoModal}
       </ha-card>
     `;
 
@@ -496,6 +490,77 @@ class KaadasLockCard extends HTMLElement {
   _toggleCollapse(key) {
     this._collapsed[key] = !this._isCollapsed(key);
     this._safeRender();
+  }
+
+  _entryId() {
+    const reg = this._hass?.entities?.[this._config.entity];
+    return reg?.config_entry_id || "";
+  }
+
+  static _ensurePhotoStyles() {
+    if (KaadasLockCard._photoStylesInjected) return;
+    KaadasLockCard._photoStylesInjected = true;
+    const style = document.createElement("style");
+    style.textContent = `
+      .kaadas-photo-overlay {
+        position: fixed; inset: 0; z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .kaadas-photo-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); }
+      .kaadas-photo-box {
+        position: relative;
+        width: min(92vw, 92vh); height: min(92vw, 92vh);
+        background: #000; border-radius: 12px; overflow: hidden;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+        display: flex; align-items: center; justify-content: center;
+      }
+      .kaadas-photo-box img {
+        display: block; max-width: 100%; max-height: 100%;
+        transform: rotate(90deg);
+      }
+      .kaadas-photo-close {
+        position: absolute; top: 8px; right: 8px;
+        width: 32px; height: 32px; border-radius: 50%; border: none;
+        background: rgba(0, 0, 0, 0.55); color: #fff; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        touch-action: none;
+      }
+      .kaadas-photo-close ha-icon { --mdc-icon-size: 20px; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  _openPhoto(recordId, category) {
+    const entryId = this._entryId();
+    if (!entryId || !recordId || !category) return;
+    const url = `/api/kaadas/image_proxy/${encodeURIComponent(entryId)}/${encodeURIComponent(category)}/${encodeURIComponent(recordId)}`;
+
+    this._closePhoto();
+    KaadasLockCard._ensurePhotoStyles();
+
+    const overlay = document.createElement("div");
+    overlay.className = "kaadas-photo-overlay";
+    overlay.innerHTML = `
+      <div class="kaadas-photo-backdrop"></div>
+      <div class="kaadas-photo-box">
+        <img src="${this._esc(url)}" alt="抓拍图" />
+        <button type="button" class="kaadas-photo-close" aria-label="关闭"><ha-icon icon="mdi:close"></ha-icon></button>
+      </div>`;
+    overlay.addEventListener("click", (ev) => {
+      const t = ev.target;
+      if (t && (t.closest?.(".kaadas-photo-backdrop") || t.closest?.(".kaadas-photo-close"))) {
+        this._closePhoto();
+      }
+    });
+    this._photoOverlay = overlay;
+    document.body.appendChild(overlay);
+  }
+
+  _closePhoto() {
+    if (this._photoOverlay) {
+      this._photoOverlay.remove();
+      this._photoOverlay = null;
+    }
   }
 
   _bindInteractions() {
@@ -537,16 +602,8 @@ class KaadasLockCard extends HTMLElement {
       }
 
       const recordEl = resolveEl(ev, ".record.has-photo");
-      if (recordEl && recordEl.dataset.thumb) {
-        this._photo = recordEl.dataset.thumb;
-        this._safeRender();
-        return true;
-      }
-
-      const closeEl = resolveEl(ev, "[data-close]");
-      if (closeEl && this._photo) {
-        this._photo = null;
-        this._safeRender();
+      if (recordEl && recordEl.dataset.id) {
+        this._openPhoto(recordEl.dataset.id, recordEl.dataset.category);
         return true;
       }
       return false;
@@ -724,35 +781,9 @@ class KaadasLockCard extends HTMLElement {
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
       .records-empty { font-size: 0.82rem; color: var(--secondary-text-color); padding: 6px 0; }
-      .record.has-photo { cursor: pointer; border-radius: 4px; touch-action: manipulation; }
+      .record.has-photo { cursor: pointer; border-radius: 4px; touch-action: none; }
       .record.has-photo:hover { background: var(--secondary-background-color, #f2f4f7); }
       .record-photo-icon { --mdc-icon-size: 16px; color: var(--secondary-text-color); flex: 0 0 auto; align-self: center; }
-
-      /* 抓拍图弹窗 */
-      .photo-modal {
-        position: fixed; inset: 0; z-index: 1000;
-        display: flex; align-items: center; justify-content: center;
-      }
-      .photo-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); }
-      .photo-box {
-        position: relative;
-        width: min(92vw, 92vh); height: min(92vw, 92vh);
-        background: #000; border-radius: 12px; overflow: hidden;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-        display: flex; align-items: center; justify-content: center;
-      }
-      .photo-box img {
-        display: block; max-width: 100%; max-height: 100%;
-        transform: rotate(90deg);
-      }
-      .photo-close {
-        position: absolute; top: 8px; right: 8px;
-        width: 32px; height: 32px; border-radius: 50%; border: none;
-        background: rgba(0, 0, 0, 0.55); color: #fff; cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
-        touch-action: none;
-      }
-      .photo-close ha-icon { --mdc-icon-size: 20px; }
 
       /* 数据更新时间：最底端 */
       .updated {

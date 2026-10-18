@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .coordinator import KaadasCoordinator
+from .http import KaadasImageProxyView
 from .token_manager import KaadasTokenManager
 from .websocket import KaadasWebSocket
 
@@ -26,13 +27,16 @@ BRAND_URL = "/kaadas/brand"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """注册前端静态路径。"""
+    """注册前端静态路径与图片代理端点。"""
     # 前端静态路径（卡片 JS + 品牌图标）：在 async_setup 阶段注册（与
     # chinese_calendar 一致），保证手机 App 通过 /kaadas/frontend/ 也能加载卡片。
     try:
         await _async_register_static_paths(hass, Path(__file__).parent)
     except Exception as err:  # noqa: BLE001 - 静态路径失败不阻塞其它功能
         _LOGGER.error("凯迪仕静态路径注册失败：%s", err)
+
+    # 图片代理端点：服务端按 record_id 拉取抓拍图，供卡片/App 精确显示
+    hass.http.register_view(KaadasImageProxyView())
     return True
 
 
